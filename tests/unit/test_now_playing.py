@@ -9,6 +9,7 @@ from textual.app import App, ComposeResult
 from textual.widgets import Static
 
 from playyt.models.playback import PlaybackState
+from playyt.models.video import Video
 from playyt.services.playback import playback
 from playyt.ui.screens.now_playing import (
     NowPlayingScreen,
@@ -30,6 +31,10 @@ def test_playback_status_labels() -> None:
     assert playback_status(playing=True, buffering=False, has_track=True) == "PLAYING"
     assert playback_status(playing=False, buffering=False, has_track=True) == "PAUSED"
     assert playback_status(playing=True, buffering=True, has_track=True) == "BUFFERING"
+    loading = playback_status(playing=False, buffering=False, has_track=True, loading=True)
+    idle = playback_status(playing=False, buffering=False, has_track=True, idle=True)
+    assert loading == "LOADING"
+    assert idle == "STOPPED"
 
 
 def test_format_time() -> None:
@@ -46,7 +51,7 @@ def test_format_progress_known_duration() -> None:
     assert "0:42" in plain
     assert "3:21" in plain
     assert "-2:39" in plain
-    assert "bright_cyan" in line
+    assert "#e0a370" in line
 
 
 def test_format_progress_unknown_duration_invents_no_total() -> None:
@@ -85,10 +90,10 @@ class _ScreenHost(App[None]):
         self.push_screen(NowPlayingScreen())
 
 
-def _run_screen(monkeypatch, state: PlaybackState):
+def _run_screen(monkeypatch, state: PlaybackState):  # noqa: PLR0915
     monkeypatch.setattr(playback, "get_state", lambda: state)
 
-    async def scenario() -> None:
+    async def scenario() -> None:  # noqa: PLR0915
         app = _ScreenHost()
         async with app.run_test(size=(80, 30)) as pilot:
             await pilot.pause()
@@ -119,6 +124,24 @@ def _run_screen(monkeypatch, state: PlaybackState):
             screen.refresh_display()
             assert "PLAYING" in _plain(screen.query_one("#np-state", Static))
             assert reels.is_animating
+
+            state.position = 26.0
+            screen.refresh_display()
+            progress = screen.query_one("#np-progress", Static).render().plain
+            assert "0:26" in progress
+            state.position = 51.0
+            screen.refresh_display()
+            progress = screen.query_one("#np-progress", Static).render().plain
+            assert "0:51" in progress
+
+            state.idle = True
+            state.playing = False
+            screen.refresh_display()
+            assert "STOPPED" in _plain(screen.query_one("#np-state", Static))
+            assert not reels.is_animating
+            state.idle = False
+            state.playing = True
+            screen.refresh_display()
 
             state.duration = None
             screen.refresh_display()
@@ -157,3 +180,40 @@ def test_now_playing_tracks_playback_state(monkeypatch) -> None:
         source="YouTube",
     )
     _run_screen(monkeypatch, state)
+
+
+class _LoadingHost(App[None]):
+    def compose(self) -> ComposeResult:
+        yield Static("host")
+
+    def on_mount(self) -> None:
+        video = Video(video_id="abc", title="Loading Song", channel="Artist", duration=180)
+        self.push_screen(NowPlayingScreen(video=video))
+
+
+def test_now_playing_shows_loading_and_animates(monkeypatch) -> None:
+    state = PlaybackState(pending=True)
+    monkeypatch.setattr(playback, "get_state", lambda: state)
+
+    async def scenario() -> None:
+        app = _LoadingHost()
+        async with app.run_test(size=(80, 30)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, NowPlayingScreen)
+            assert "LOADING" in _plain(screen.query_one("#np-state", Static))
+            assert "Loading Song" in _plain(screen.query_one("#np-track-title", Static))
+            assert "3:00" in screen.query_one("#np-progress", Static).render().plain
+            reels = screen.query_one(CassetteReels)
+            assert reels.is_animating
+
+            state.video_id = "resolved-url"
+            state.playing = True
+            state.pending = False
+            state.duration = 180
+            state.position = 3.0
+            screen.refresh_display()
+            assert "PLAYING" in _plain(screen.query_one("#np-state", Static))
+            assert reels.is_animating
+
+    asyncio.run(scenario())

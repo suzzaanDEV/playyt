@@ -1,6 +1,6 @@
 # PlayYT
 
-PlayYT — a minimal, colorful, robust YouTube music player for the terminal.
+PlayYT — a warm, minimal, robust YouTube music player for the terminal.
 
 Designed primarily for remote SSH servers. No graphical desktop, no X11, no browser required.
 
@@ -195,6 +195,8 @@ disconnects and terminal detaches.
 | , / . | Playback speed down / up |
 | Left / Right | Seek backward / forward (10 seconds) |
 | / | Search |
+| Tab | Search: move to results |
+| Shift+Tab | Search: return to the query |
 | Esc | Back |
 | Ctrl+Z | Suspend to the shell |
 | q | Quit |
@@ -214,7 +216,8 @@ The Now Playing screen (reached by playing a track) shows:
 
 - Two animated cassette reels that spin while audio plays and freeze when
   paused or buffering
-- Live status (PLAYING, PAUSED, BUFFERING, STOPPED)
+- Instant loading view while a track is resolved, then live status
+  (LOADING, PLAYING, PAUSED, BUFFERING, STOPPED)
 - Track title, artist/channel, and source
 - Progress bar with elapsed and total time
 - Shuffle, repeat, volume, and playback-speed indicators

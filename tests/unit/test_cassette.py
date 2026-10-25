@@ -25,8 +25,8 @@ def test_frames_rotate_but_wrap_around() -> None:
 
 def test_left_and_right_reels_counter_rotate() -> None:
     view = render_cassette(80, frame=3)
-    assert "bright_cyan" in view
-    assert "bright_magenta" in view
+    assert "#e6b066" in view
+    assert "#cf9aa4" in view
 
 
 def test_ascii_fallback_uses_star_marker() -> None:

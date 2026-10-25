@@ -12,37 +12,34 @@ from textual.widgets import Static
 
 from ...models.video import Video
 from ...services.playback import playback
+from ...utils.formatting import format_time
 from ..widgets.cassette import CassetteReels, detect_unicode_support
 
-_CYAN = "bright_cyan"
-_GREEN = "bright_green"
-_YELLOW = "bright_yellow"
-_MUTED = "grey50"
-_DIM = "grey35"
-_TEXT = "bright_white"
+_AMBER = "#e0a370"
+_SAGE = "#9fb98f"
+_GOLD = "#e6c384"
+_MUTED = "#8b7f72"
+_DIM = "#3b3128"
+_TEXT = "#f6ead6"
 
 
-def playback_status(playing: bool, buffering: bool, has_track: bool) -> str:
+def playback_status(
+    playing: bool,
+    buffering: bool,
+    has_track: bool,
+    loading: bool = False,
+    idle: bool = False,
+) -> str:
     """Return the textual playback status shown in the header."""
-    if not has_track:
+    if loading:
+        return "LOADING"
+    if not has_track or idle:
         return "STOPPED"
     if buffering:
         return "BUFFERING"
     if playing:
         return "PLAYING"
     return "PAUSED"
-
-
-def format_time(seconds: float | None) -> str:
-    """Format seconds as m:ss, or h:mm:ss for long tracks."""
-    if seconds is None:
-        return "0:00"
-    total = max(0, int(seconds))
-    hours, remainder = divmod(total, 3600)
-    minutes, secs = divmod(remainder, 60)
-    if hours:
-        return f"{hours}:{minutes:02d}:{secs:02d}"
-    return f"{minutes}:{secs:02d}"
 
 
 def format_progress(
@@ -67,7 +64,7 @@ def format_progress(
     played = int(ratio * bar_width)
     fill = "━" if unicode_ok else "="
     empty = "━" if unicode_ok else "-"
-    bar = f"[{_CYAN}]{fill * played}[/][{_DIM}]{empty * (bar_width - played)}[/]"
+    bar = f"[{_AMBER}]{fill * played}[/][{_DIM}]{empty * (bar_width - played)}[/]"
     return f"[{_MUTED}]{pos}[/]  {bar}  [{_TEXT}]{total}[/]  {sep}  -{remaining}"
 
 
@@ -97,8 +94,8 @@ class NowPlayingScreen(Screen):
 
     CSS = """
     NowPlayingScreen {
-        background: #1e1e2e;
-        color: #cdd6f4;
+        background: #171310;
+        color: #e9dfd1;
     }
 
     #np-container {
@@ -115,7 +112,7 @@ class NowPlayingScreen(Screen):
 
     #np-heading {
         width: 1fr;
-        color: #89dceb;
+        color: #e6b477;
         text-style: bold;
     }
 
@@ -127,7 +124,7 @@ class NowPlayingScreen(Screen):
     #np-track-title {
         width: 100%;
         text-align: center;
-        color: #f8f8f2;
+        color: #f6ead6;
         text-style: bold;
     }
 
@@ -138,11 +135,11 @@ class NowPlayingScreen(Screen):
     }
 
     #np-artist {
-        color: #89dceb;
+        color: #e6b477;
     }
 
     #np-source {
-        color: #cba6f7;
+        color: #c9a9c4;
     }
 
     #np-progress {
@@ -166,7 +163,7 @@ class NowPlayingScreen(Screen):
     #np-footer {
         width: 100%;
         text-align: center;
-        color: #6c7086;
+        color: #7e7266;
         margin-top: 1;
     }
     """
@@ -192,7 +189,7 @@ class NowPlayingScreen(Screen):
 
     def on_mount(self) -> None:
         self.refresh_display()
-        self.set_interval(0.5, self.refresh_display)
+        self.set_interval(0.4, self.refresh_display)
 
     def action_close(self) -> None:
         self.app.pop_screen()
@@ -200,23 +197,41 @@ class NowPlayingScreen(Screen):
     def on_resize(self, event: events.Resize) -> None:
         self.refresh_display()
 
+    def on_screen_resume(self) -> None:
+        self.refresh_display()
+
     def refresh_display(self) -> None:
         state = playback.get_state()
         width = max(18, self.size.width or 80)
 
-        duration = state.duration
-        if duration is None and self.video is not None:
-            duration = self.video.duration
-
+        loading = bool(self.video is not None and state.pending)
         has_track = bool(state.video_id or self.video)
-        title = state.title or (self.video.title if self.video else "") or "Nothing playing"
-        artist = state.channel or (self.video.channel if self.video else "") or ""
-        source = state.source or ("YouTube" if has_track else "")
 
-        status = playback_status(state.playing, state.buffering, has_track)
+        if loading:
+            position = 0.0
+            duration = self.video.duration if self.video and self.video.duration else None
+            title = self.video.title if self.video else "Nothing playing"
+            artist = (self.video.channel if self.video else "") or ""
+            source = "YouTube"
+        else:
+            position = state.position
+            duration = state.duration
+            if (duration is None or duration <= 0) and self.video is not None:
+                duration = self.video.duration
+            title = state.title or (self.video.title if self.video else "") or "Nothing playing"
+            artist = state.channel or (self.video.channel if self.video else "") or ""
+            source = state.source or ("YouTube" if has_track else "")
+
+        status = playback_status(
+            state.playing,
+            state.buffering,
+            has_track,
+            loading=loading,
+            idle=state.idle,
+        )
         self.query_one("#np-state", Static).update(self._status_markup(status))
         self.query_one("#np-cassette", CassetteReels).set_playback(
-            playing=state.playing,
+            playing=state.playing or loading,
             buffering=state.buffering,
         )
 
@@ -232,14 +247,14 @@ class NowPlayingScreen(Screen):
         )
 
         self.query_one("#np-progress", Static).update(
-            format_progress(state.position, duration, width, self._unicode)
+            format_progress(position, duration, width, self._unicode)
         )
         self.query_one("#np-controls", Static).update(
             self._controls_markup(state.playing, state.shuffle, state.repeat, has_track)
         )
         self.query_one("#np-audio", Static).update(
-            f"[bold {_CYAN}]- / +[/] volume [{_TEXT}]{state.volume}%[/]     "
-            f"[bold {_CYAN}], / .[/] speed [{_TEXT}]{format_speed(state.speed)}[/]"
+            f"[bold {_AMBER}]- / +[/] volume [{_TEXT}]{state.volume}%[/]     "
+            f"[bold {_AMBER}], / .[/] speed [{_TEXT}]{format_speed(state.speed)}[/]"
         )
         self.query_one("#np-footer", Static).update(self._footer_markup())
 
@@ -250,9 +265,10 @@ class NowPlayingScreen(Screen):
     @staticmethod
     def _status_markup(status: str) -> str:
         color = {
-            "PLAYING": _GREEN,
-            "PAUSED": _YELLOW,
-            "BUFFERING": _CYAN,
+            "PLAYING": _SAGE,
+            "PAUSED": _GOLD,
+            "BUFFERING": _AMBER,
+            "LOADING": _AMBER,
             "STOPPED": _MUTED,
         }.get(status, _MUTED)
         return f"[bold {color}]{status}[/]"
@@ -265,11 +281,11 @@ class NowPlayingScreen(Screen):
         if not has_track:
             play = "PLAY"
         return (
-            f"[bold {_CYAN}]p[/] prev     "
-            f"[bold {_CYAN}]space[/] {play}     "
-            f"[bold {_CYAN}]n[/] next     "
-            f"[bold {_CYAN}]s[/] shuffle {shuffle_label}     "
-            f"[bold {_CYAN}]r[/] repeat {repeat_label}"
+            f"[bold {_AMBER}]p[/] prev     "
+            f"[bold {_AMBER}]space[/] {play}     "
+            f"[bold {_AMBER}]n[/] next     "
+            f"[bold {_AMBER}]s[/] shuffle {shuffle_label}     "
+            f"[bold {_AMBER}]r[/] repeat {repeat_label}"
         )
 
     def _footer_markup(self) -> str:

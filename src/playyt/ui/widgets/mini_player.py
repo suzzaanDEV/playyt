@@ -6,6 +6,7 @@ from textual.widget import Widget
 from textual.widgets import Static
 
 from ...services.playback import playback
+from ...utils.formatting import format_time
 
 
 class MiniPlayer(Widget):
@@ -13,8 +14,8 @@ class MiniPlayer(Widget):
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.title_static = Static("No track playing", id="mini-title")
-        self.status_static = Static("", id="mini-status")
+        self.title_static = Static("No track playing", id="mini-title", markup=False)
+        self.status_static = Static("", id="mini-status", markup=False)
 
     def compose(self):
         yield self.title_static
@@ -31,17 +32,9 @@ class MiniPlayer(Widget):
             return
         title = state.title or "Unknown"
         channel = state.channel or ""
-        pos = self._fmt(state.position)
-        dur = self._fmt(state.duration) if state.duration else "?:??"
+        pos = format_time(state.position)
+        dur = format_time(state.duration) if state.duration else "?:??"
         vol = state.volume
         marker = ">" if state.playing else "||"
         self.title_static.update(f"{title}  ·  {channel}")
         self.status_static.update(f"{pos} / {dur}   {marker}   {vol}%")
-
-    @staticmethod
-    def _fmt(seconds) -> str:
-        if seconds is None:
-            return "0:00"
-        total = int(seconds)
-        minutes, secs = divmod(total, 60)
-        return f"{minutes}:{secs:02d}"

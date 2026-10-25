@@ -1,22 +1,22 @@
-"""Color palette for PlayYT (no emojis)."""
+"""Warm color palette for PlayYT (no emojis)."""
 
 from __future__ import annotations
 
 PALETTE: dict[str, str] = {
-    # Dracula-inspired primary colors (from Ansicolor)
-    "primary": "#bd93f9",  # Hex - purple
-    "primary_dim": "#8be9fd",  # Mist - cyan
-    "accent": "#ff79c6",  # Veil - magenta
-    "accent_dim": "#bd93f9",  # Hex - purple
-    "success": "#50fa7b",  # Wolfsbane - green
-    "warning": "#f1fa8c",  # Fang - yellow
-    "error": "#ff5555",  # Blood - red
-    "text_primary": "#f8f8f2",  # Parchment - near white
-    "text_secondary": "#8be9fd",  # Mist - cyan
-    "text_dim": "#6272a4",  # Dracula comment gray
-    "background": "#282a36",  # Crypt - dark
-    "surface": "#44475a",  # Dracula selection gray
-    "surface_hover": "#6272a4",
-    "border": "#6272a4",
-    "playing": "#ff79c6",  # Veil - magenta
+    # Warm analog palette
+    "primary": "#d8a25e",  # Amber
+    "primary_dim": "#e6c384",  # Soft gold
+    "accent": "#cf9aa4",  # Dusty rose
+    "accent_dim": "#b9a3c9",  # Muted mauve
+    "success": "#9fb98f",  # Sage
+    "warning": "#e6c384",  # Soft gold
+    "error": "#e07a6f",  # Terracotta
+    "text_primary": "#e9dfd1",  # Warm cream
+    "text_secondary": "#d8b48c",  # Sand
+    "text_dim": "#8b7f72",  # Warm gray
+    "background": "#171310",  # Espresso
+    "surface": "#221c17",  # Warm charcoal
+    "surface_hover": "#33291f",
+    "border": "#3b3128",
+    "playing": "#e0a370",  # Amber
 }

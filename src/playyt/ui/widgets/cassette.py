@@ -77,11 +77,11 @@ _TINY_MARKERS: Final = (
     (0, 1),
 )
 
-_WHEEL_COLOR: Final = "grey50"
-_FRAME_COLOR: Final = "grey35"
-_HUB_COLOR: Final = "bright_white"
-_LEFT_COLOR: Final = "bright_cyan"
-_RIGHT_COLOR: Final = "bright_magenta"
+_WHEEL_COLOR: Final = "#7e7266"
+_FRAME_COLOR: Final = "#4a3d30"
+_HUB_COLOR: Final = "#f6ead6"
+_LEFT_COLOR: Final = "#e6b066"
+_RIGHT_COLOR: Final = "#cf9aa4"
 
 
 def detect_unicode_support() -> bool:

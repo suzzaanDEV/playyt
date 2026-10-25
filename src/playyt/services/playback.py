@@ -264,6 +264,10 @@ class PlaybackService:
     # ------------------------------------------------------------------ #
     # Playback control
     # ------------------------------------------------------------------ #
+    def begin_pending(self) -> None:
+        """Mark a requested track as resolving before mpv gets the URL."""
+        self.state.pending = True
+
     def load(
         self,
         url: str,
@@ -279,6 +283,8 @@ class PlaybackService:
         assert self.ipc is not None
         try:
             self.ipc.command("loadfile", url, "replace")
+            # A previous pause must not carry over to the next track.
+            self.ipc.set_property("pause", False)
             self.state.playing = True
             self.state.video_id = url
             self.state.title = title or url
@@ -286,8 +292,11 @@ class PlaybackService:
             self.state.source = source or "YouTube"
             self.state.position = 0.0
             self.state.buffering = False
+            self.state.idle = False
+            self.state.pending = False
             self._refresh_state()
         except Exception as exc:
+            self.state.pending = False
             self._last_error = f"Failed to load media: {exc}"
             logger.error(self._last_error)
             raise PlaybackError(self._last_error) from exc
@@ -477,6 +486,7 @@ class PlaybackService:
     # ------------------------------------------------------------------ #
     def _refresh_state(self) -> None:
         if self.ipc is None:
+            self.state.buffering = False
             return
         try:
             self.state.position = float(self.ipc.get_property("time-pos") or 0.0)
@@ -486,6 +496,10 @@ class PlaybackService:
             self.state.speed = float(self.ipc.get_property("speed") or self._speed)
             # mpv reports this while it is waiting for more data.
             self.state.buffering = bool(self.ipc.get_property("paused-for-cache"))
+            self.state.idle = bool(self.ipc.get_property("idle-active"))
+            if self.state.idle:
+                self.state.playing = False
+                self.state.buffering = False
         except Exception as exc:
             logger.debug("State refresh failed: %s", exc)
 

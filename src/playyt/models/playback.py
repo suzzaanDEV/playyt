@@ -21,3 +21,5 @@ class PlaybackState:
     repeat: str = "off"
     source: str | None = None
     buffering: bool = False
+    idle: bool = False
+    pending: bool = False

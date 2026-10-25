@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+from textual import work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, ListView, Static
@@ -57,20 +58,20 @@ class PlayYTApp(App[None]):
     CSS = """
     Screen {
         layout: vertical;
-        background: #1e1e2e;
+        background: #171310;
     }
 
     Header {
-        background: #181825;
-        border-bottom: solid #cba6f7;
-        color: #cdd6f4;
+        background: #100d0b;
+        border-bottom: solid #d8a25e;
+        color: #e9dfd1;
         height: 3;
     }
 
     #sidebar {
         width: 26;
-        background: #313244;
-        border-right: solid #45475a;
+        background: #221c17;
+        border-right: solid #3b3128;
         padding: 1;
     }
 
@@ -81,62 +82,62 @@ class PlayYTApp(App[None]):
 
     #mini-player {
         height: 3;
-        background: #313244;
-        border-top: solid #fab387;
-        color: #cdd6f4;
+        background: #221c17;
+        border-top: solid #e0a370;
+        color: #e9dfd1;
         padding: 0 1;
     }
 
     #status {
         height: 1;
-        background: #181825;
-        border-top: solid #a6e3a1;
-        color: #cdd6f4;
+        background: #100d0b;
+        border-top: solid #9fb98f;
+        color: #e9dfd1;
         padding: 0 1;
     }
 
     .title {
         text-style: bold;
-        color: #89b4fa;
+        color: #e6b477;
     }
 
     .section {
         text-style: bold;
-        color: #fab387;
+        color: #e0a370;
     }
 
     .panel-header {
         text-style: bold;
-        color: #cdd6f4;
+        color: #e9dfd1;
     }
 
     ListView {
-        background: #1e1e2e;
-        border: solid #45475a;
+        background: #171310;
+        border: solid #3b3128;
     }
 
     ListView:focus {
-        border: solid #cba6f7;
+        border: solid #d8a25e;
     }
 
     ListItem {
         padding: 0 1;
-        color: #cdd6f4;
+        color: #e9dfd1;
     }
 
     ListItem.-highlight {
-        background: #45475a;
-        color: #f5e0dc;
+        background: #332a22;
+        color: #f6ead6;
     }
 
     ListItem.armed {
-        background: #585b70;
-        color: #f9e2af;
+        background: #44372a;
+        color: #f3d6a0;
         text-style: bold;
     }
 
     #search-results-list ListItem {
-        border-bottom: solid #313244;
+        border-bottom: solid #221c17;
     }
 
     #home-scroll,
@@ -149,54 +150,54 @@ class PlayYTApp(App[None]):
     #library-scroll,
     #account-scroll,
     #settings-scroll {
-        background: #1e1e2e;
+        background: #171310;
         padding: 1;
     }
 
     #search-input {
         margin: 1 0;
-        background: #313244;
-        border: tall #45475a;
+        background: #221c17;
+        border: tall #3b3128;
     }
 
     #search-input:focus {
-        border: tall #cba6f7;
+        border: tall #d8a25e;
     }
 
     .search-result {
-        color: #cdd6f4;
+        color: #e9dfd1;
     }
 
     .separator {
-        color: #45475a;
+        color: #3b3128;
     }
 
     .panel {
-        border: solid #45475a;
+        border: solid #3b3128;
         padding: 1;
         margin: 0 1;
         height: 1fr;
     }
 
     .panel-purple {
-        border: solid #cba6f7;
+        border: solid #b9a3c9;
     }
 
     .panel-orange {
-        border: solid #fab387;
+        border: solid #e0a370;
     }
 
     .panel-green {
-        border: solid #a6e3a1;
+        border: solid #9fb98f;
     }
 
     .panel-magenta {
-        border: solid #cba6f7;
+        border: solid #cf9aa4;
     }
 
     .panel-header {
         text-style: bold;
-        color: #cdd6f4;
+        color: #e9dfd1;
         margin-bottom: 1;
     }
     """
@@ -217,7 +218,7 @@ class PlayYTApp(App[None]):
             yield Sidebar(id="sidebar")
             yield Vertical(id="content")
         yield MiniPlayer(id="mini-player")
-        yield Static(id="status")
+        yield Static(id="status", markup=False)
         yield Footer()
 
     def on_mount(self) -> None:
@@ -318,12 +319,17 @@ class PlayYTApp(App[None]):
         pass
 
     def play_video(self, video) -> None:
-        """Resolve a video via yt-dlp and start playback, showing Now Playing."""
-        ytdlp = YTDLP()
+        """Open Now Playing immediately, then resolve and start audio in the background."""
+        playback.begin_pending()
+        self.push_screen(NowPlayingScreen(video=video))
+        self._resolve_and_play(video)
+
+    @work(exclusive=True, thread=True)
+    def _resolve_and_play(self, video) -> None:
         try:
-            resolved = ytdlp.resolve_url(video.video_id)
+            resolved = YTDLP().resolve_url(video.video_id)
         except Exception as exc:
-            self.notify(f"Failed to resolve media: {exc}")
+            self._deliver_playback_error(f"Failed to resolve media: {exc}")
             return
         try:
             playback.load(
@@ -332,10 +338,8 @@ class PlayYTApp(App[None]):
                 channel=resolved.get("channel") or video.channel,
             )
         except PlaybackError as exc:
-            self.notify(f"  {exc}  |  Install mpv to play audio: sudo apt install mpv  ", timeout=5)
-            self.notify_status(str(exc))
+            self._deliver_playback_error(str(exc), mpv_hint=True)
             return
-        # Add to history
         try:
             HistoryRepository().add(
                 video.video_id,
@@ -345,7 +349,20 @@ class PlayYTApp(App[None]):
             )
         except Exception:
             pass
-        self.push_screen(NowPlayingScreen(video=video))
+
+    def _deliver_playback_error(self, message: str, mpv_hint: bool = False) -> None:
+        try:
+            self.call_from_thread(self._playback_failed, message, mpv_hint)
+        except Exception:
+            pass
+
+    def _playback_failed(self, message: str, mpv_hint: bool) -> None:
+        playback.state.pending = False
+        if isinstance(self.screen, NowPlayingScreen):
+            self.pop_screen()
+        hint = "  |  Playback needs mpv: sudo apt install mpv  " if mpv_hint else ""
+        self.notify(f"  {message}{hint}", timeout=6)
+        self.notify_status(message)
 
     def authenticate(self) -> None:
         """Start OAuth device flow."""

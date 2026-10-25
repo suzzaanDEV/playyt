@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.screen import Screen
 from textual.widgets import Static
 
@@ -30,6 +33,11 @@ def _key_label(key: str) -> str:
 
 class HelpScreen(Screen):
     """Keyboard shortcuts reference."""
+
+    BINDINGS: ClassVar[list] = [Binding("escape", "close", "Back")]
+
+    def action_close(self) -> None:
+        self.app.pop_screen()
 
     def compose(self) -> ComposeResult:
         yield Static("Keyboard Shortcuts", id="help-title")

@@ -5,15 +5,18 @@ from __future__ import annotations
 from textual import work
 from textual.app import ComposeResult
 from textual.containers import Container, VerticalScroll
+from textual.timer import Timer
 from textual.widget import Widget
 from textual.widgets import Button, Input, ListItem, ListView, Static
 
+from ..config.settings import settings
 from ..database import HistoryRepository, PlaylistRepository, QueueRepository
 from ..models.video import Video
 from ..services.authentication import auth
 from ..services.playback import playback
 from ..services.search import SearchService
 from ..services.youtube import youtube
+from ..utils.formatting import format_time
 from ..utils.logging import get_logger
 
 logger = get_logger("content")
@@ -55,10 +58,10 @@ class HomePanel(ContentPanel):
             yield Static("")
             with VerticalScroll(id="home-scroll"):
                 yield Static("Recently Played", classes="section")
-                yield Static(id="home-recent-list")
+                yield Static(id="home-recent-list", markup=False)
                 yield Static("")
                 yield Static("Your Playlists", classes="section")
-                yield Static(id="home-playlist-list")
+                yield Static(id="home-playlist-list", markup=False)
                 yield Static("")
                 yield Static("Quick Start", classes="section")
                 yield Static(
@@ -116,9 +119,16 @@ class SearchPanel(ContentPanel):
     def __init__(self, app_ref, **kwargs) -> None:
         super().__init__(app_ref, **kwargs)
         self.search_service = SearchService()
+        try:
+            limit = int(settings.get("search_limit", 10))
+        except (TypeError, ValueError):
+            limit = 10
+        self.search_limit = max(1, min(limit, 50))
         self.results: list = []
         self.selected_index = 0
         self._searching = False
+        self._search_generation = 0
+        self._spinner_interval: Timer | None = None
 
     def compose(self) -> ComposeResult:
         with Container(classes="panel panel-orange"):
@@ -126,13 +136,13 @@ class SearchPanel(ContentPanel):
             yield Static("")
             yield Static("Type a query and press Enter:", id="search-hint")
             yield Input(placeholder="Search YouTube...", id="search-input")
-            yield Static(id="search-query-display")
+            yield Static(id="search-query-display", markup=False)
             yield Static("")
             yield Static("Results", classes="section")
-            yield Static(id="search-spinner")
+            yield Static(id="search-spinner", markup=False)
             with VerticalScroll(id="search-scroll"):
                 yield ListView(id="search-results-list")
-            yield Static(id="search-status")
+            yield Static(id="search-status", markup=False)
 
     def on_mount(self) -> None:
         super().on_mount()
@@ -146,6 +156,8 @@ class SearchPanel(ContentPanel):
         self.query_one("#search-query-display", Static).update(f"Query: {query}")
 
     def _start_spinner(self) -> None:
+        if self._spinner_interval is not None:
+            self._spinner_interval.stop()
         self._searching = True
         self._spinner_frames = [
             "[=>   ]",
@@ -163,8 +175,9 @@ class SearchPanel(ContentPanel):
 
     def _stop_spinner(self) -> None:
         self._searching = False
-        if hasattr(self, "_spinner_interval"):
+        if self._spinner_interval is not None:
             self._spinner_interval.stop()
+            self._spinner_interval = None
         self.query_one("#search-spinner", Static).update("")
 
     def _tick_spinner(self) -> None:
@@ -175,32 +188,37 @@ class SearchPanel(ContentPanel):
         self._spinner_idx += 1
 
     def run_search(self, query: str) -> None:
-        if not query.strip():
+        query = query.strip()
+        if not query:
             return
+        self._search_generation += 1
+        generation = self._search_generation
         self.set_query(query)
         self.results = []
         self.query_one("#search-results-list", ListView).clear()
         self.query_one("#search-status", Static).update("")
         self._start_spinner()
-        self._search_worker(query)
+        self._search_worker(query, generation)
 
     @work(exclusive=True, thread=True)
-    def _search_worker(self, query: str) -> None:
+    def _search_worker(self, query: str, generation: int) -> None:
         try:
-            results = self.search_service.search(query)
+            results = self.search_service.search(query, limit=self.search_limit)
         except Exception as exc:
             message = str(exc)
             try:
-                self.app.call_from_thread(self._on_search_error, message)
+                self.app.call_from_thread(self._on_search_error, message, generation)
             except Exception:
                 logger.debug("Could not deliver search error to UI")
             return
         try:
-            self.app.call_from_thread(self._on_search_results, results)
+            self.app.call_from_thread(self._on_search_results, results, generation)
         except Exception:
             logger.debug("Could not deliver search results to UI")
 
-    def _on_search_results(self, results: list[Video]) -> None:
+    def _on_search_results(self, results: list[Video], generation: int) -> None:
+        if generation != self._search_generation:
+            return
         try:
             self._stop_spinner()
             self.results = results
@@ -208,28 +226,32 @@ class SearchPanel(ContentPanel):
             list_view.clear()
             self.selected_index = 0
             for video in self.results:
-                label = f"  \\[>]  {video.title}"
+                label = f"  [>]  {video.title}"
                 if video.channel:
                     label += f"  ·  {video.channel}"
                 if video.duration:
-                    mins, secs = divmod(int(video.duration), 60)
-                    label += f"  ({mins}:{secs:02d})"
-                list_view.append(ListItem(Static(label), id=f"vid_{video.video_id}"))
+                    label += f"  ({format_time(video.duration)})"
+                list_view.append(ListItem(Static(label, markup=False), id=f"vid_{video.video_id}"))
             if results:
                 list_view.index = 0
                 self.query_one("#search-status", Static).update(
-                    f"{len(results)} results  ·  Tab to tracks  ·  "
-                    "Enter to select  ·  Space to play"
+                    f"{len(results)} results  ·  Up/Down select  ·  "
+                    "Enter arm  ·  Space play  ·  Shift+Tab new search"
                 )
+                list_view.focus()
             else:
                 self.query_one("#search-status", Static).update("No results found")
+                self.query_one("#search-input", Input).focus()
         except Exception:
             logger.debug("Search panel is no longer mounted")
 
-    def _on_search_error(self, message: str) -> None:
+    def _on_search_error(self, message: str, generation: int) -> None:
+        if generation != self._search_generation:
+            return
         try:
             self._stop_spinner()
-            self.query_one("#search-status", Static).update(f"Search failed: {message}")
+            self.query_one("#search-status", Static).update(message)
+            self.query_one("#search-input", Input).focus()
         except Exception:
             logger.debug("Search panel is no longer mounted")
 
@@ -308,7 +330,7 @@ class QueuePanel(ContentPanel):
             yield Static("Queue", classes="panel-header")
             yield Static("")
             with VerticalScroll(id="queue-scroll"):
-                yield Static(id="queue-list")
+                yield Static(id="queue-list", markup=False)
 
     def refresh_content(self) -> None:
         try:
@@ -396,7 +418,7 @@ class PlaylistsPanel(ContentPanel):
             yield Static("Playlists", classes="panel-header")
             yield Static("")
             with VerticalScroll(id="playlists-scroll"):
-                yield Static(id="playlists-list")
+                yield Static(id="playlists-list", markup=False)
 
     def refresh_content(self) -> None:
         try:
@@ -425,7 +447,7 @@ class LikedPanel(ContentPanel):
             yield Static("Liked", classes="panel-header")
             yield Static("")
             with VerticalScroll(id="liked-scroll"):
-                yield Static(id="liked-list")
+                yield Static(id="liked-list", markup=False)
 
     def refresh_content(self) -> None:
         widget = self.query_one("#liked-list", Static)
@@ -460,7 +482,7 @@ class HistoryPanel(ContentPanel):
             yield Static("History", classes="panel-header")
             yield Static("")
             with VerticalScroll(id="history-scroll"):
-                yield Static(id="history-list")
+                yield Static(id="history-list", markup=False)
 
     def refresh_content(self) -> None:
         try:
@@ -492,7 +514,7 @@ class SubscriptionsPanel(ContentPanel):
             yield Static("Subscriptions", classes="panel-header")
             yield Static("")
             with VerticalScroll(id="subscriptions-scroll"):
-                yield Static(id="subscriptions-list")
+                yield Static(id="subscriptions-list", markup=False)
 
     def refresh_content(self) -> None:
         widget = self.query_one("#subscriptions-list", Static)
@@ -524,7 +546,7 @@ class LibraryPanel(ContentPanel):
             yield Static("Library", classes="panel-header")
             yield Static("")
             with VerticalScroll(id="library-scroll"):
-                yield Static(id="library-list")
+                yield Static(id="library-list", markup=False)
 
     def refresh_content(self) -> None:
         widget = self.query_one("#library-list", Static)

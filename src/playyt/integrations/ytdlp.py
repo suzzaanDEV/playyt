@@ -77,8 +77,8 @@ class YTDLP:
     def search(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
         """Search YouTube and return a list of video results."""
         args = [
-            "--default-search",
-            "ytsearch%d" % limit,
+            # Flat playlist keeps search fast: no per-video extraction.
+            "--flat-playlist",
             "--print",
             "%(title)s",
             "--print",

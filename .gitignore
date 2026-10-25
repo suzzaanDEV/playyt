@@ -35,3 +35,6 @@ htmlcov/
 
 # Logs
 *.log
+
+# Environment (never commit real secrets)
+.env

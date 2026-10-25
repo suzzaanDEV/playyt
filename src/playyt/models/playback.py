@@ -19,3 +19,5 @@ class PlaybackState:
     speed: float = 1.0
     shuffle: bool = False
     repeat: str = "off"
+    source: str | None = None
+    buffering: bool = False

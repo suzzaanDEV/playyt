@@ -26,10 +26,13 @@ NAVIGATION_BINDINGS: list[Binding] = [
     Binding("r", "toggle_repeat", "Repeat"),
     Binding("plus", "volume_up", "Volume up"),
     Binding("minus", "volume_down", "Volume down"),
+    Binding("comma", "speed_down", "Slower"),
+    Binding("full_stop", "speed_up", "Faster"),
     Binding("left", "seek_backward", "Seek backward"),
     Binding("right", "seek_forward", "Seek forward"),
     Binding("/", "search", "Search"),
     Binding("escape", "back", "Back"),
+    Binding("ctrl+z", "suspend_process", "Suspend", show=False),
     Binding("q", "quit", "Quit"),
     Binding("?", "show_help", "Help"),
 ]

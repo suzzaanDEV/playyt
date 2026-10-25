@@ -192,9 +192,11 @@ disconnects and terminal detaches.
 | s | Shuffle |
 | r | Repeat |
 | + / - | Volume up / down |
+| , / . | Playback speed down / up |
 | Left / Right | Seek backward / forward (10 seconds) |
 | / | Search |
 | Esc | Back |
+| Ctrl+Z | Suspend to the shell |
 | q | Quit |
 | ? | Help |
 
@@ -210,15 +212,20 @@ Song Title · Artist    0:45 / 3:42   >   80%
 
 The Now Playing screen (reached by playing a track) shows:
 
-- Artwork placeholder (falls back to text on basic terminals)
-- Track title and artist/channel
+- Two animated cassette reels that spin while audio plays and freeze when
+  paused or buffering
+- Live status (PLAYING, PAUSED, BUFFERING, STOPPED)
+- Track title, artist/channel, and source
 - Progress bar with elapsed and total time
-- Playback controls (`<<`, `> / ||`, `>>`)
-- Shuffle and Repeat indicators
-- Volume percentage
-- Playback speed (e.g. `Speed 1.0x`)
+- Shuffle, repeat, volume, and playback-speed indicators
+- Control hints, with Esc returning to the previous screen
 
-Playback speed options: 0.5x, 0.75x, 1.0x, 1.25x, 1.5x, 1.75x, 2.0x.
+The reels adapt to the terminal width and fall back to ASCII on terminals
+without Unicode support (or when `PLAYYT_ASCII=1` is set), so the screen
+works over SSH on basic console setups.
+
+Playback speed adjusts in 0.25x steps with `,` and `.`, between 0.25x and
+2.0x (for example `Speed 1.25x`).
 
 ## Configuration
 

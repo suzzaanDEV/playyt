@@ -403,6 +403,12 @@ class PlayYTApp(App[None]):
     def action_volume_down(self) -> None:
         self._run_playback(playback.volume_down)
 
+    def action_speed_up(self) -> None:
+        self._run_playback(playback.speed_up)
+
+    def action_speed_down(self) -> None:
+        self._run_playback(playback.speed_down)
+
     def action_toggle_shuffle(self) -> None:
         self._run_playback(playback.toggle_shuffle)
 

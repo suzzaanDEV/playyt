@@ -8,6 +8,25 @@ from textual.widgets import Static
 
 from ...ui.bindings import NAVIGATION_BINDINGS
 
+_KEY_LABELS = {
+    "up": "Up",
+    "down": "Down",
+    "enter": "Enter",
+    "space": "Space",
+    "left": "Left",
+    "right": "Right",
+    "plus": "+",
+    "minus": "-",
+    "comma": ",",
+    "full_stop": ".",
+    "escape": "Esc",
+    "ctrl+z": "Ctrl+Z",
+}
+
+
+def _key_label(key: str) -> str:
+    return _KEY_LABELS.get(key, key)
+
 
 class HelpScreen(Screen):
     """Keyboard shortcuts reference."""
@@ -17,13 +36,14 @@ class HelpScreen(Screen):
         yield Static("")
         yield Static("Navigation", classes="section")
         for binding in NAVIGATION_BINDINGS:
-            yield Static(f"  {binding.key:<12} {binding.description}")
+            yield Static(f"  {_key_label(binding.key):<12} {binding.description}")
         yield Static("")
         yield Static("Playback", classes="section")
         yield Static("  Space        Play / pause")
         yield Static("  n / p        Next / previous track")
         yield Static("  Left / Right Seek backward / forward (10s)")
         yield Static("  + / -        Volume up / down")
+        yield Static("  , / .        Slower / faster")
         yield Static("  s            Shuffle")
         yield Static("  r            Repeat")
         yield Static("  a            Add to queue")

@@ -264,7 +264,13 @@ class PlaybackService:
     # ------------------------------------------------------------------ #
     # Playback control
     # ------------------------------------------------------------------ #
-    def load(self, url: str, title: str = "", channel: str = "") -> None:
+    def load(
+        self,
+        url: str,
+        title: str = "",
+        channel: str = "",
+        source: str = "YouTube",
+    ) -> None:
         """Load and play a media URL."""
         if not self.is_running():
             if self._process is not None:
@@ -277,7 +283,9 @@ class PlaybackService:
             self.state.video_id = url
             self.state.title = title or url
             self.state.channel = channel or ""
+            self.state.source = source or "YouTube"
             self.state.position = 0.0
+            self.state.buffering = False
             self._refresh_state()
         except Exception as exc:
             self._last_error = f"Failed to load media: {exc}"
@@ -431,6 +439,14 @@ class PlaybackService:
         next_speed = speeds[(idx + 1) % len(speeds)]
         self.set_speed(next_speed)
 
+    def speed_up(self) -> None:
+        """Increase playback speed by 0.25x, capped at 2.0x."""
+        self.set_speed(min(2.0, round(self._speed + 0.25, 2)))
+
+    def speed_down(self) -> None:
+        """Decrease playback speed by 0.25x, floored at 0.25x."""
+        self.set_speed(max(0.25, round(self._speed - 0.25, 2)))
+
     def toggle_shuffle(self) -> None:
         if self.ipc is None:
             self._last_error = "mpv is not running. Play a track first."
@@ -468,6 +484,8 @@ class PlaybackService:
             self.state.playing = not bool(self.ipc.get_property("pause"))
             self.state.volume = int(self.ipc.get_property("volume") or self._volume)
             self.state.speed = float(self.ipc.get_property("speed") or self._speed)
+            # mpv reports this while it is waiting for more data.
+            self.state.buffering = bool(self.ipc.get_property("paused-for-cache"))
         except Exception as exc:
             logger.debug("State refresh failed: %s", exc)
 

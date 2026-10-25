@@ -56,13 +56,13 @@ class PlayYTApp(App[None]):
     CSS = """
     Screen {
         layout: vertical;
-        background: $surface;
+        background: $background;
     }
 
     #sidebar {
         width: 26;
         background: $panel;
-        border-right: solid $border;
+        border-right: solid $primary;
         padding: 1;
     }
 
@@ -74,15 +74,15 @@ class PlayYTApp(App[None]):
     #mini-player {
         height: 3;
         background: $panel;
-        border-top: solid $border;
+        border-top: solid $secondary;
         padding: 0 1;
     }
 
     #status {
         height: 1;
         background: $panel;
-        border-top: solid $border;
-        color: $text-secondary;
+        border-top: solid $success;
+        color: $text-primary;
         padding: 0 1;
     }
 
@@ -93,11 +93,11 @@ class PlayYTApp(App[None]):
 
     .section {
         text-style: bold;
-        color: $text-secondary;
+        color: $secondary;
     }
 
     ListView {
-        background: $panel;
+        background: $surface;
     }
 
     ListItem {
@@ -105,8 +105,21 @@ class PlayYTApp(App[None]):
     }
 
     ListItem.-highlight {
-        background: $primary;
+        background: $accent;
         color: $text-primary;
+    }
+
+    #home-scroll,
+    #search-scroll,
+    #queue-scroll,
+    #playlists-scroll,
+    #liked-scroll,
+    #history-scroll,
+    #subscriptions-scroll,
+    #library-scroll,
+    #account-scroll,
+    #settings-scroll {
+        background: $background;
     }
     """
 

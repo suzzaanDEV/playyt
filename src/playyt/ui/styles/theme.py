@@ -1,4 +1,4 @@
-"""Custom theme for PlayYT."""
+"""Custom theme for PlayYT (colorful Dracula-inspired palette)."""
 
 from __future__ import annotations
 
@@ -6,14 +6,14 @@ from textual.theme import Theme
 
 PLAYYT_THEME = Theme(
     name="playyt-dark",
-    primary="#00d4ff",
-    secondary="#b066ff",
-    warning="#fbbf24",
-    error="#ff4d4d",
-    success="#4ade80",
-    foreground="#ffffff",
-    background="#0f172a",
-    surface="#1e293b",
-    panel="#1e293b",
+    primary="#bd93f9",  # Hex - purple
+    secondary="#ff79c6",  # Veil - magenta
+    warning="#f1fa8c",  # Fang - yellow
+    error="#ff5555",  # Blood - red
+    success="#50fa7b",  # Wolfsbane - green
+    foreground="#f8f8f2",  # Parchment - near white
+    background="#282a36",  # Crypt - dark
+    surface="#44475a",  # Dracula selection gray
+    panel="#44475a",
     dark=True,
 )

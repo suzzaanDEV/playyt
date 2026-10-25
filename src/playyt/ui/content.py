@@ -165,7 +165,7 @@ class SearchPanel(ContentPanel):
             if video.duration:
                 mins, secs = divmod(int(video.duration), 60)
                 label += f"  ({mins}:{secs:02d})"
-            list_view.append(ListItem(Static(label), id=video.video_id))
+            list_view.append(ListItem(Static(label), id=f"vid_{video.video_id}"))
         self.query_one("#search-status", Static).update(f"{len(self.results)} results")
 
     def get_selected_video(self) -> Video | None:
@@ -173,8 +173,9 @@ class SearchPanel(ContentPanel):
         highlighted = list_view.highlighted_child
         if highlighted is None:
             return None
-        video_id = highlighted.id
-        if video_id is None:
+        item_id = highlighted.id or ""
+        video_id = item_id[len("vid_") :] if item_id.startswith("vid_") else item_id
+        if not video_id:
             return None
         return next((v for v in self.results if v.video_id == video_id), None)
 

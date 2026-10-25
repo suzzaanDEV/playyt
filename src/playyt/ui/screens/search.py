@@ -51,11 +51,12 @@ class SearchScreen(Screen):
             if video.duration:
                 mins, secs = divmod(int(video.duration), 60)
                 label += f"  ({mins}:{secs:02d})"
-            list_view.append(ListItem(Label(label), id=video.video_id))
+            list_view.append(ListItem(Label(label), id=f"vid_{video.video_id}"))
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         item = event.item
-        video_id = item.id
+        item_id = item.id or ""
+        video_id = item_id[len("vid_") :] if item_id.startswith("vid_") else item_id
         video = next((v for v in self.results if v.video_id == video_id), None)
         if video is None:
             return

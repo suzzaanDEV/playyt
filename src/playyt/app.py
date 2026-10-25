@@ -131,6 +131,7 @@ class PlayYTApp(App[None]):
         super().__init__()
         setup_logging(debug=debug)
         self.current_panel: ContentPanel | None = None
+        self.auth = auth
 
     def compose(self) -> ComposeResult:
         yield Header()

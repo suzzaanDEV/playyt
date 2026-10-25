@@ -251,7 +251,8 @@ class PlayYTApp(App[None]):
                 channel=resolved.get("channel") or video.channel,
             )
         except PlaybackError as exc:
-            self.notify(str(exc))
+            self.notify(f"  {exc}  |  Install mpv to play audio: sudo apt install mpv  ", timeout=5)
+            self.notify_status(str(exc))
             return
         # Add to history
         try:
@@ -287,7 +288,9 @@ class PlayYTApp(App[None]):
         try:
             action()
         except PlaybackError as exc:
-            self.notify(str(exc))
+            msg = f"  {exc}  |  Search and press Enter on a track to play first.  "
+            self.notify(msg, timeout=5)
+            self.notify_status(str(exc))
 
     def action_toggle_playback(self) -> None:
         self._run_playback(playback.play_pause)

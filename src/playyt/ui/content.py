@@ -144,9 +144,19 @@ class SearchPanel(ContentPanel):
 
     def _start_spinner(self) -> None:
         self._searching = True
-        self._spinner_frames = ["|", "/", "-", "\\"]
+        self._spinner_frames = [
+            "[=>   ]",
+            "[==>  ]",
+            "[===> ]",
+            "[====>]",
+            "[ ===>]",
+            "[  ==>]",
+            "[   =>]",
+            "[    >]",
+        ]
         self._spinner_idx = 0
-        self._spinner_interval = self.set_interval(0.1, self._tick_spinner)
+        self._spinner_interval = self.set_interval(0.08, self._tick_spinner)
+        self.query_one("#search-spinner", Static).update("  searching...  ")
 
     def _stop_spinner(self) -> None:
         self._searching = False
@@ -158,7 +168,7 @@ class SearchPanel(ContentPanel):
         if not self._searching:
             return
         frame = self._spinner_frames[self._spinner_idx % len(self._spinner_frames)]
-        self.query_one("#search-spinner", Static).update(f"  {frame}  searching...")
+        self.query_one("#search-spinner", Static).update(f"  {frame} searching YouTube...  ")
         self._spinner_idx += 1
 
     def run_search(self, query: str) -> None:
@@ -183,7 +193,9 @@ class SearchPanel(ContentPanel):
         list_view = self.query_one("#search-results-list", ListView)
         list_view.clear()
         self.selected_index = 0
-        for video in self.results:
+        for idx, video in enumerate(self.results):
+            if idx > 0:
+                list_view.append(ListItem(Static("  " + "-" * 35), id=f"sep_{idx}"))
             label = f"  {video.title}"
             if video.channel:
                 label += f"  ·  {video.channel}"
@@ -199,6 +211,8 @@ class SearchPanel(ContentPanel):
         if highlighted is None:
             return None
         item_id = highlighted.id or ""
+        if item_id.startswith("sep_"):
+            return None
         video_id = item_id[len("vid_") :] if item_id.startswith("vid_") else item_id
         if not video_id:
             return None

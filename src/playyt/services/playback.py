@@ -273,6 +273,7 @@ class PlaybackService:
         url: str,
         title: str = "",
         channel: str = "",
+        duration: int | None = None,
         source: str = "YouTube",
     ) -> None:
         """Load and play a media URL."""
@@ -289,6 +290,7 @@ class PlaybackService:
             self.state.video_id = url
             self.state.title = title or url
             self.state.channel = channel or ""
+            self.state.duration = duration
             self.state.source = source or "YouTube"
             self.state.position = 0.0
             self.state.buffering = False
@@ -490,7 +492,9 @@ class PlaybackService:
             return
         try:
             self.state.position = float(self.ipc.get_property("time-pos") or 0.0)
-            self.state.duration = self.ipc.get_property("duration")
+            reported_duration = self.ipc.get_property("duration")
+            if reported_duration is not None:
+                self.state.duration = reported_duration
             self.state.playing = not bool(self.ipc.get_property("pause"))
             self.state.volume = int(self.ipc.get_property("volume") or self._volume)
             self.state.speed = float(self.ipc.get_property("speed") or self._speed)

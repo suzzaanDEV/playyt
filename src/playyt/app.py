@@ -336,6 +336,7 @@ class PlayYTApp(App[None]):
                 resolved["url"],
                 title=resolved.get("title") or video.title,
                 channel=resolved.get("channel") or video.channel,
+                duration=resolved.get("duration") or video.duration,
             )
         except PlaybackError as exc:
             self._deliver_playback_error(str(exc), mpv_hint=True)

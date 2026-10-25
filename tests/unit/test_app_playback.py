@@ -28,7 +28,13 @@ class _FailingYTDLP:
         raise RuntimeError("network down")
 
 
-def _fake_load(url: str, title: str = "", channel: str = "", source: str = "YouTube") -> None:
+def _fake_load(
+    url: str,
+    title: str = "",
+    channel: str = "",
+    duration: int | None = None,
+    source: str = "YouTube",
+) -> None:
     playback.state.video_id = url
     playback.state.title = title
     playback.state.channel = channel

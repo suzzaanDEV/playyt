@@ -8,7 +8,7 @@ import time
 
 import requests
 
-from ..config.paths import credentials_dir
+from ..config.paths import config_dir, credentials_dir
 from ..utils.errors import AuthenticationError
 from ..utils.logging import get_logger
 
@@ -44,9 +44,11 @@ class GoogleOAuth:
 
     def _require_credentials(self) -> None:
         if not self._credentials_configured:
+            env_path = config_dir() / ".env"
             raise AuthenticationError(
-                "OAuth client credentials not configured. "
-                "Set PLAYYT_CLIENT_ID and PLAYYT_CLIENT_SECRET."
+                "OAuth client credentials not configured. Add "
+                "PLAYYT_CLIENT_ID and PLAYYT_CLIENT_SECRET to "
+                f"{env_path}."
             )
 
     # ------------------------------------------------------------------ #

@@ -70,6 +70,13 @@ def test_begin_pending_and_load_clears_it() -> None:
     assert service.state.pending is False
 
 
+def test_load_keeps_expected_duration_when_mpv_reports_none() -> None:
+    ipc = _FakeIPC(duration=None)
+    service = _service_with(ipc)
+    service.load("https://media", title="Song", duration=180)
+    assert service.state.duration == 180
+
+
 def test_refresh_state_reports_buffering_and_idle() -> None:
     ipc = _FakeIPC(pause=False, **{"paused-for-cache": True, "idle-active": False})
     service = _service_with(ipc)

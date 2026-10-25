@@ -57,57 +57,72 @@ class PlayYTApp(App[None]):
     CSS = """
     Screen {
         layout: vertical;
-        background: $background;
+        background: #1e1e2e;
+    }
+
+    Header {
+        background: #181825;
+        border-bottom: solid #cba6f7;
+        color: #cdd6f4;
+        height: 3;
     }
 
     #sidebar {
         width: 26;
-        background: $panel;
-        border-right: solid $primary;
+        background: #313244;
+        border-right: solid #89b4fa;
         padding: 1;
     }
 
     #content {
         height: 1fr;
-        padding: 1 2;
+        padding: 0;
     }
 
     #mini-player {
         height: 3;
-        background: $panel;
-        border-top: solid $secondary;
+        background: #313244;
+        border-top: solid #fab387;
+        color: #cdd6f4;
         padding: 0 1;
     }
 
     #status {
         height: 1;
-        background: $panel;
-        border-top: solid $success;
-        color: $text-primary;
+        background: #181825;
+        border-top: solid #a6e3a1;
+        color: #cdd6f4;
         padding: 0 1;
     }
 
     .title {
         text-style: bold;
-        color: $primary;
+        color: #89b4fa;
     }
 
     .section {
         text-style: bold;
-        color: $secondary;
+        color: #fab387;
+    }
+
+    .panel-header {
+        text-style: bold;
+        color: #cdd6f4;
     }
 
     ListView {
-        background: $surface;
+        background: #1e1e2e;
+        border: solid #45475a;
     }
 
     ListItem {
         padding: 0 1;
+        color: #cdd6f4;
     }
 
     ListItem.-highlight {
-        background: $accent;
-        color: $text-primary;
+        background: #89b4fa;
+        color: #1e1e2e;
     }
 
     #home-scroll,
@@ -120,7 +135,49 @@ class PlayYTApp(App[None]):
     #library-scroll,
     #account-scroll,
     #settings-scroll {
-        background: $background;
+        background: #1e1e2e;
+        padding: 1;
+    }
+
+    #search-input {
+        margin: 1 0;
+    }
+
+    .search-result {
+        color: #cdd6f4;
+    }
+
+    .separator {
+        color: #45475a;
+    }
+
+    .panel {
+        border: solid #45475a;
+        padding: 1;
+        margin: 0 1;
+        height: 1fr;
+    }
+
+    .panel-purple {
+        border: solid #89b4fa;
+    }
+
+    .panel-orange {
+        border: solid #fab387;
+    }
+
+    .panel-green {
+        border: solid #a6e3a1;
+    }
+
+    .panel-magenta {
+        border: solid #cba6f7;
+    }
+
+    .panel-header {
+        text-style: bold;
+        color: #cdd6f4;
+        margin-bottom: 1;
     }
     """
 

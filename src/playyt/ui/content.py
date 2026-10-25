@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from textual.app import ComposeResult
-from textual.containers import VerticalScroll
+from textual.containers import Container, VerticalScroll
 from textual.widget import Widget
 from textual.widgets import Input, ListItem, ListView, Static
 
@@ -50,20 +50,21 @@ class HomePanel(ContentPanel):
     """Home panel showing recently played and playlists."""
 
     def compose(self) -> ComposeResult:
-        with VerticalScroll(id="home-scroll"):
-            yield Static("Home", classes="title")
+        with Container(classes="panel panel-purple"):
+            yield Static("Home", classes="panel-header")
             yield Static("")
-            yield Static("Recently Played", classes="section")
-            yield Static(id="home-recent-list")
-            yield Static("")
-            yield Static("Your Playlists", classes="section")
-            yield Static(id="home-playlist-list")
-            yield Static("")
-            yield Static("Quick Start", classes="section")
-            yield Static(
-                "Use Search to find music, or open Account to log in.",
-                id="home-quickstart",
-            )
+            with VerticalScroll(id="home-scroll"):
+                yield Static("Recently Played", classes="section")
+                yield Static(id="home-recent-list")
+                yield Static("")
+                yield Static("Your Playlists", classes="section")
+                yield Static(id="home-playlist-list")
+                yield Static("")
+                yield Static("Quick Start", classes="section")
+                yield Static(
+                    "Use Search to find music, or open Account to log in.",
+                    id="home-quickstart",
+                )
 
     def refresh_content(self) -> None:
         self._refresh_recent()
@@ -120,15 +121,16 @@ class SearchPanel(ContentPanel):
         self._searching = False
 
     def compose(self) -> ComposeResult:
-        with VerticalScroll(id="search-scroll"):
-            yield Static("Search YouTube", classes="title")
+        with Container(classes="panel panel-orange"):
+            yield Static("Search YouTube", classes="panel-header")
             yield Static("")
             yield Static("Type a query and press Enter:", id="search-hint")
             yield Input(placeholder="Search YouTube...", id="search-input")
             yield Static(id="search-query-display")
             yield Static("")
             yield Static("Results", classes="section")
-            yield ListView(id="search-results-list")
+            with VerticalScroll(id="search-scroll"):
+                yield ListView(id="search-results-list")
             yield Static(id="search-status")
             yield Static(id="search-spinner")
 
@@ -236,10 +238,11 @@ class QueuePanel(ContentPanel):
     """Queue panel showing the playback queue."""
 
     def compose(self) -> ComposeResult:
-        with VerticalScroll(id="queue-scroll"):
-            yield Static("Queue", classes="title")
+        with Container(classes="panel panel-orange"):
+            yield Static("Queue", classes="panel-header")
             yield Static("")
-            yield Static(id="queue-list")
+            with VerticalScroll(id="queue-scroll"):
+                yield Static(id="queue-list")
 
     def refresh_content(self) -> None:
         try:
@@ -268,14 +271,15 @@ class AccountPanel(ContentPanel):
 
     def compose(self) -> ComposeResult:
         self.auth = auth
-        with VerticalScroll(id="account-scroll"):
-            yield Static("Account", classes="title")
+        with Container(classes="panel panel-green"):
+            yield Static("Account", classes="panel-header")
             yield Static("")
-            yield Static(id="account-status")
-            yield Static("")
-            yield Static(id="account-hint")
-            yield Static("")
-            yield Static(id="account-actions")
+            with VerticalScroll(id="account-scroll"):
+                yield Static(id="account-status")
+                yield Static("")
+                yield Static(id="account-hint")
+                yield Static("")
+                yield Static(id="account-actions")
 
     def refresh_content(self) -> None:
         status_widget = self.query_one("#account-status", Static)
@@ -298,10 +302,11 @@ class PlaylistsPanel(ContentPanel):
     """Playlists panel showing user playlists."""
 
     def compose(self) -> ComposeResult:
-        with VerticalScroll(id="playlists-scroll"):
-            yield Static("Playlists", classes="title")
+        with Container(classes="panel panel-magenta"):
+            yield Static("Playlists", classes="panel-header")
             yield Static("")
-            yield Static(id="playlists-list")
+            with VerticalScroll(id="playlists-scroll"):
+                yield Static(id="playlists-list")
 
     def refresh_content(self) -> None:
         try:
@@ -326,10 +331,11 @@ class LikedPanel(ContentPanel):
     """Liked videos panel."""
 
     def compose(self) -> ComposeResult:
-        with VerticalScroll(id="liked-scroll"):
-            yield Static("Liked", classes="title")
+        with Container(classes="panel panel-magenta"):
+            yield Static("Liked", classes="panel-header")
             yield Static("")
-            yield Static(id="liked-list")
+            with VerticalScroll(id="liked-scroll"):
+                yield Static(id="liked-list")
 
     def refresh_content(self) -> None:
         widget = self.query_one("#liked-list", Static)
@@ -360,10 +366,11 @@ class HistoryPanel(ContentPanel):
     """Local history panel."""
 
     def compose(self) -> ComposeResult:
-        with VerticalScroll(id="history-scroll"):
-            yield Static("History", classes="title")
+        with Container(classes="panel panel-green"):
+            yield Static("History", classes="panel-header")
             yield Static("")
-            yield Static(id="history-list")
+            with VerticalScroll(id="history-scroll"):
+                yield Static(id="history-list")
 
     def refresh_content(self) -> None:
         try:
@@ -391,10 +398,11 @@ class SubscriptionsPanel(ContentPanel):
     """Subscriptions panel."""
 
     def compose(self) -> ComposeResult:
-        with VerticalScroll(id="subscriptions-scroll"):
-            yield Static("Subscriptions", classes="title")
+        with Container(classes="panel panel-purple"):
+            yield Static("Subscriptions", classes="panel-header")
             yield Static("")
-            yield Static(id="subscriptions-list")
+            with VerticalScroll(id="subscriptions-scroll"):
+                yield Static(id="subscriptions-list")
 
     def refresh_content(self) -> None:
         widget = self.query_one("#subscriptions-list", Static)
@@ -422,10 +430,11 @@ class LibraryPanel(ContentPanel):
     """Library panel."""
 
     def compose(self) -> ComposeResult:
-        with VerticalScroll(id="library-scroll"):
-            yield Static("Library", classes="title")
+        with Container(classes="panel panel-purple"):
+            yield Static("Library", classes="panel-header")
             yield Static("")
-            yield Static(id="library-list")
+            with VerticalScroll(id="library-scroll"):
+                yield Static(id="library-list")
 
     def refresh_content(self) -> None:
         widget = self.query_one("#library-list", Static)
@@ -436,10 +445,11 @@ class SettingsPanel(ContentPanel):
     """Settings panel."""
 
     def compose(self) -> ComposeResult:
-        with VerticalScroll(id="settings-scroll"):
-            yield Static("Settings", classes="title")
+        with Container(classes="panel panel-purple"):
+            yield Static("Settings", classes="panel-header")
             yield Static("")
-            yield Static(id="settings-list")
+            with VerticalScroll(id="settings-scroll"):
+                yield Static(id="settings-list")
 
     def refresh_content(self) -> None:
         widget = self.query_one("#settings-list", Static)

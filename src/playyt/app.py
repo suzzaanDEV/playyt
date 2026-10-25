@@ -31,6 +31,7 @@ from .ui.screens.now_playing import NowPlayingScreen
 from .ui.styles.theme import PLAYYT_THEME
 from .ui.widgets.mini_player import MiniPlayer
 from .ui.widgets.sidebar import Sidebar
+from .utils.errors import PlaybackError
 from .utils.logging import setup_logging
 
 PANEL_CLASSES: dict[str, type[ContentPanel]] = {
@@ -243,11 +244,15 @@ class PlayYTApp(App[None]):
         except Exception as exc:
             self.notify(f"Failed to resolve media: {exc}")
             return
-        playback.load(
-            resolved["url"],
-            title=resolved.get("title") or video.title,
-            channel=resolved.get("channel") or video.channel,
-        )
+        try:
+            playback.load(
+                resolved["url"],
+                title=resolved.get("title") or video.title,
+                channel=resolved.get("channel") or video.channel,
+            )
+        except PlaybackError as exc:
+            self.notify(str(exc))
+            return
         # Add to history
         try:
             HistoryRepository().add(
@@ -277,29 +282,36 @@ class PlayYTApp(App[None]):
     # ------------------------------------------------------------------ #
     # Playback actions
     # ------------------------------------------------------------------ #
+    def _run_playback(self, action) -> None:
+        """Run a playback action, showing a user-friendly error if mpv is not running."""
+        try:
+            action()
+        except PlaybackError as exc:
+            self.notify(str(exc))
+
     def action_toggle_playback(self) -> None:
-        playback.play_pause()
+        self._run_playback(playback.play_pause)
 
     def action_next_track(self) -> None:
-        playback.next_track()
+        self._run_playback(playback.next_track)
 
     def action_previous_track(self) -> None:
-        playback.previous_track()
+        self._run_playback(playback.previous_track)
 
     def action_volume_up(self) -> None:
-        playback.volume_up()
+        self._run_playback(playback.volume_up)
 
     def action_volume_down(self) -> None:
-        playback.volume_down()
+        self._run_playback(playback.volume_down)
 
     def action_toggle_shuffle(self) -> None:
-        playback.toggle_shuffle()
+        self._run_playback(playback.toggle_shuffle)
 
     def action_toggle_repeat(self) -> None:
-        playback.toggle_repeat()
+        self._run_playback(playback.toggle_repeat)
 
     def action_seek_backward(self) -> None:
-        playback.seek(-10)
+        self._run_playback(lambda: playback.seek(-10))
 
     def action_seek_forward(self) -> None:
-        playback.seek(10)
+        self._run_playback(lambda: playback.seek(10))

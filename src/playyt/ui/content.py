@@ -5,7 +5,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Container, VerticalScroll
 from textual.widget import Widget
-from textual.widgets import Input, ListItem, ListView, Static
+from textual.widgets import Button, Input, ListItem, ListView, Static
 
 from ..database import HistoryRepository, PlaylistRepository, QueueRepository
 from ..models.video import Video
@@ -280,22 +280,46 @@ class AccountPanel(ContentPanel):
                 yield Static(id="account-hint")
                 yield Static("")
                 yield Static(id="account-actions")
+                yield Static("")
+                yield Button("Authenticate", id="btn-auth", variant="primary")
+                yield Button("Log out", id="btn-logout", variant="error")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn-auth":
+            self._start_auth()
+        elif event.button.id == "btn-logout":
+            self.auth.logout()
+            self.refresh_content()
+
+    def _start_auth(self) -> None:
+        try:
+            self.auth.authenticate()
+            self.query_one("#account-hint", Static).update("Authentication successful.")
+            self.refresh_content()
+        except Exception as exc:
+            self.query_one("#account-hint", Static).update(f"Auth failed: {exc}")
 
     def refresh_content(self) -> None:
         status_widget = self.query_one("#account-status", Static)
         hint_widget = self.query_one("#account-hint", Static)
         actions_widget = self.query_one("#account-actions", Static)
+        auth_btn = self.query_one("#btn-auth", Button)
+        logout_btn = self.query_one("#btn-logout", Button)
 
         if self.auth.is_authenticated():
             status_widget.update("Status: Connected")
             hint_widget.update("Your YouTube account is linked.")
             actions_widget.update("Use Playlists, Subscriptions, Liked to browse your content.")
+            auth_btn.display = False
+            logout_btn.display = True
         else:
             status_widget.update("Status: Not connected")
-            hint_widget.update("")
-            actions_widget.update(
-                "Set PLAYYT_CLIENT_ID and PLAYYT_CLIENT_SECRET, then authenticate."
+            hint_widget.update(
+                "Credentials loaded from .env. Press Authenticate to link your YouTube account."
             )
+            actions_widget.update("")
+            auth_btn.display = True
+            logout_btn.display = False
 
 
 class PlaylistsPanel(ContentPanel):

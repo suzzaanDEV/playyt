@@ -6,8 +6,10 @@ import argparse
 import shutil
 import sys
 
+from dotenv import load_dotenv
+
 from .app import PlayYTApp
-from .config.paths import cache_dir
+from .config.paths import cache_dir, config_dir
 from .services.authentication import auth
 
 
@@ -39,7 +41,16 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def load_env() -> None:
+    """Load environment variables from .env file if it exists."""
+    env_path = config_dir() / ".env"
+    if env_path.exists():
+        load_dotenv(env_path, override=False)
+
+
 def main(argv: list[str] | None = None) -> int:
+    load_env()
+
     parser = build_parser()
     args = parser.parse_args(argv)
 

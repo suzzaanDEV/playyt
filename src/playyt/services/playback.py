@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import threading
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -16,6 +18,19 @@ from ..utils.logging import get_logger
 logger = get_logger("playback")
 
 
+def find_mpv() -> str:
+    """Find the mpv binary path, checking common locations."""
+    mpv_path = settings.get("mpv_path", "mpv")
+    found: Optional[str] = shutil.which(mpv_path)
+    if found:
+        return found
+    # Check common installation paths
+    for candidate in ["/usr/bin/mpv", "/usr/local/bin/mpv", "/opt/homebrew/bin/mpv"]:
+        if Path(candidate).exists():
+            return candidate
+    return "mpv"
+
+
 class PlaybackService:
     """Controls mpv playback and exposes a synchronous API."""
 
@@ -26,61 +41,125 @@ class PlaybackService:
         self.state = PlaybackState()
         self._volume = int(settings.get("volume", 80))
         self._speed = float(settings.get("playback_speed", 1.0))
+        self._last_error: Optional[str] = None
 
     # ------------------------------------------------------------------ #
     # Lifecycle
     # ------------------------------------------------------------------ #
     def start_player(self, force_new: bool = False) -> None:
-        """Start mpv with IPC, or attach to an existing instance."""
+        """Start mpv with IPC, or attach to an existing instance.
+
+        Raises PlaybackError with a clear message if mpv cannot start.
+        """
         with self._lock:
-            if self.ipc is not None and self.ipc._connected:
-                logger.debug("Already connected to mpv")
-                return
+            self._start_or_attach(force_new)
 
-            socket_path = None
-            if not force_new:
-                existing = find_existing_socket()
-                if existing:
-                    socket_path = existing
+    def _start_or_attach(self, force_new: bool) -> None:
+        if self.ipc is not None and self.ipc._connected:
+            logger.debug("Already connected to mpv")
+            return
 
-            self.ipc = MPVIPC(socket_path=socket_path)
-            try:
-                self.ipc.connect()
-            except Exception:
-                # No existing player; start a new mpv instance.
-                if socket_path is not None:
-                    socket_path = None
-                    self.ipc = MPVIPC(socket_path=None)
-                    self.ipc.connect()
-                else:
-                    raise
+        socket_path = self._find_existing_socket_path(force_new)
 
-            if self._process is None:
-                self._spawn_mpv(socket_path)
+        self.ipc = MPVIPC(socket_path=socket_path)
+        try:
+            self.ipc.connect()
+            logger.debug("Connected to existing mpv IPC at %s", socket_path)
+            return
+        except Exception as exc:
+            logger.debug("No existing mpv IPC: %s", exc)
 
-            self._apply_settings()
-            logger.info("Playback service ready")
+        self._spawn_new_mpv(socket_path)
 
-    def _spawn_mpv(self, socket_path: Optional[str]) -> None:
-        sock = socket_path or str(Path("/tmp") / "mpvplayyt.sock")
+    def _find_existing_socket_path(self, force_new: bool) -> Optional[str]:
+        if not force_new:
+            existing = find_existing_socket()
+            if existing:
+                return existing
+        return None
+
+    def _spawn_new_mpv(self, socket_path: Optional[str]) -> None:
+        # No existing player; start a new mpv instance.
+        mpv_bin = find_mpv()
+        sock = str(Path("/tmp") / "mpvplayyt.sock")
+
+        # Build mpv command with headless-friendly audio options
+        audio_output = settings.get("audio_output", "auto")
         cmd = [
-            settings.get("mpv_path", "mpv"),
+            mpv_bin,
             "--idle",
             "--force-window=immediate",
             "--input-ipc-server=" + sock,
             "--quiet",
             "--really-quiet",
             "--term-playing-msg=",
+            "--audio-display=no",
         ]
-        # Detach mpv from the controlling terminal so it survives SSH drops.
-        self._process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-        logger.debug("Spawned mpv (pid=%s) with IPC socket %s", self._process.pid, sock)
+        if audio_output != "auto":
+            cmd.extend(["--audio-output=" + audio_output])
+
+        logger.debug("Spawning mpv: %s", " ".join(cmd))
+
+        try:
+            self._process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except FileNotFoundError as exc:
+            self._last_error = (
+                f"mpv binary not found at '{mpv_bin}'. Install it: sudo apt install mpv"
+            )
+            logger.exception(self._last_error)
+            self.ipc = None
+            raise PlaybackError(self._last_error) from exc
+        except Exception as exc:
+            self._last_error = f"Failed to start mpv: {exc}"
+            logger.exception(self._last_error)
+            self.ipc = None
+            raise PlaybackError(self._last_error) from exc
+
+        # Wait briefly for the IPC socket to appear
+        socket_ready = False
+        for _ in range(50):  # up to 5 seconds
+            time.sleep(0.1)
+            if Path(sock).exists():
+                socket_ready = True
+                break
+
+        if not socket_ready:
+            # mpv failed to start; capture stderr for diagnostics
+            stderr_output = ""
+            try:
+                _, stderr = self._process.communicate(timeout=2)
+                stderr_output = stderr.decode("utf-8", errors="replace")[:500]
+            except Exception:
+                pass
+
+            self._process = None
+            self.ipc = None
+            self._last_error = (
+                "mpv failed to start. "
+                f"Stderr: {stderr_output if stderr_output else 'no output'}. "
+                "Install mpv: sudo apt install mpv yt-dlp"
+            )
+            logger.exception(self._last_error)
+            raise PlaybackError(self._last_error)
+
+        # Connect to the new IPC socket
+        self.ipc = MPVIPC(socket_path=sock)
+        try:
+            self.ipc.connect()
+        except Exception as exc:
+            self.ipc = None
+            self._last_error = f"Cannot connect to mpv IPC: {exc}"
+            logger.exception(self._last_error)
+            raise PlaybackError(self._last_error) from exc
+
+        self._apply_settings()
+        logger.info("Playback service ready with mpv (pid=%s)", self._process.pid)
 
     def _apply_settings(self) -> None:
         if self.ipc is None:
@@ -104,6 +183,12 @@ class PlaybackService:
                     pass
                 self.ipc.close()
                 self.ipc = None
+            if self._process is not None:
+                try:
+                    self._process.wait(timeout=5)
+                except Exception:
+                    self._process.kill()
+                self._process = None
             self.state = PlaybackState()
             logger.info("Playback stopped")
 
@@ -114,6 +199,10 @@ class PlaybackService:
                 self.ipc.close()
                 self.ipc = None
             logger.info("Detached from mpv (playback continues)")
+
+    def get_last_error(self) -> Optional[str]:
+        """Return the last playback error, if any."""
+        return self._last_error
 
     # ------------------------------------------------------------------ #
     # Playback control
@@ -132,7 +221,9 @@ class PlaybackService:
             self.state.position = 0.0
             self._refresh_state()
         except Exception as exc:
-            raise PlaybackError(f"Failed to load media: {exc}") from exc
+            self._last_error = f"Failed to load media: {exc}"
+            logger.error(self._last_error)
+            raise PlaybackError(self._last_error) from exc
 
     def load_next(self, url: str, title: str = "", channel: str = "") -> None:
         """Append a URL to be played after the current one."""
@@ -142,46 +233,87 @@ class PlaybackService:
         try:
             self.ipc.command("loadfile", url, "append")
         except Exception as exc:
-            raise PlaybackError(f"Failed to queue media: {exc}") from exc
+            self._last_error = f"Failed to queue media: {exc}"
+            logger.error(self._last_error)
+            raise PlaybackError(self._last_error) from exc
 
     def play_pause(self) -> None:
-        self._require_ipc()
-        assert self.ipc is not None
-        self.ipc.command("cycle", "pause")
-        self.state.playing = not self.state.playing
+        """Toggle play/pause. Starts mpv if not running."""
+        if self.ipc is None:
+            self._last_error = (
+                "mpv is not running. Search for a track and press Enter to play it first."
+            )
+            logger.warning(self._last_error)
+            raise PlaybackError(self._last_error)
+        try:
+            self.ipc.command("cycle", "pause")
+            self.state.playing = not self.state.playing
+        except Exception as exc:
+            self._last_error = f"Playback control failed: {exc}"
+            logger.error(self._last_error)
+            raise PlaybackError(self._last_error) from exc
 
     def play(self) -> None:
-        self._require_ipc()
-        assert self.ipc is not None
-        self.ipc.set_property("pause", False)
-        self.state.playing = True
+        if self.ipc is None:
+            self._last_error = "mpv is not running. Play a track first."
+            raise PlaybackError(self._last_error)
+        try:
+            self.ipc.set_property("pause", False)
+            self.state.playing = True
+        except Exception as exc:
+            self._last_error = f"Playback control failed: {exc}"
+            raise PlaybackError(self._last_error) from exc
 
     def pause(self) -> None:
-        self._require_ipc()
-        assert self.ipc is not None
-        self.ipc.set_property("pause", True)
-        self.state.playing = False
+        if self.ipc is None:
+            self._last_error = "mpv is not running. Play a track first."
+            raise PlaybackError(self._last_error)
+        try:
+            self.ipc.set_property("pause", True)
+            self.state.playing = False
+        except Exception as exc:
+            self._last_error = f"Playback control failed: {exc}"
+            raise PlaybackError(self._last_error) from exc
 
     def stop_playback(self) -> None:
-        self._require_ipc()
-        assert self.ipc is not None
-        self.ipc.command("stop")
-        self.state.playing = False
+        if self.ipc is None:
+            return
+        try:
+            self.ipc.command("stop")
+            self.state.playing = False
+        except Exception as exc:
+            self._last_error = f"Stop failed: {exc}"
+            raise PlaybackError(self._last_error) from exc
 
     def next_track(self) -> None:
-        self._require_ipc()
-        assert self.ipc is not None
-        self.ipc.command("playlist-next")
+        if self.ipc is None:
+            self._last_error = "mpv is not running. Play a track first."
+            raise PlaybackError(self._last_error)
+        try:
+            self.ipc.command("playlist-next")
+        except Exception as exc:
+            self._last_error = f"Next track failed: {exc}"
+            raise PlaybackError(self._last_error) from exc
 
     def previous_track(self) -> None:
-        self._require_ipc()
-        assert self.ipc is not None
-        self.ipc.command("playlist-prev")
+        if self.ipc is None:
+            self._last_error = "mpv is not running. Play a track first."
+            raise PlaybackError(self._last_error)
+        try:
+            self.ipc.command("playlist-prev")
+        except Exception as exc:
+            self._last_error = f"Previous track failed: {exc}"
+            raise PlaybackError(self._last_error) from exc
 
     def seek(self, seconds: float) -> None:
-        self._require_ipc()
-        assert self.ipc is not None
-        self.ipc.command("seek", seconds)
+        if self.ipc is None:
+            self._last_error = "mpv is not running. Play a track first."
+            raise PlaybackError(self._last_error)
+        try:
+            self.ipc.command("seek", seconds)
+        except Exception as exc:
+            self._last_error = f"Seek failed: {exc}"
+            raise PlaybackError(self._last_error) from exc
 
     def volume_up(self) -> None:
         self._adjust_volume(5)
@@ -190,25 +322,46 @@ class PlaybackService:
         self._adjust_volume(-5)
 
     def _adjust_volume(self, delta: int) -> None:
-        self._require_ipc()
+        if self.ipc is None:
+            self._last_error = "mpv is not running. Play a track first."
+            raise PlaybackError(self._last_error)
         assert self.ipc is not None
-        current = int(self.ipc.get_property("volume") or self._volume)
+        try:
+            current = int(self.ipc.get_property("volume") or self._volume)
+        except Exception:
+            current = self._volume
         new = max(0, min(100, current + delta))
-        self.ipc.set_property("volume", new)
+        try:
+            self.ipc.set_property("volume", new)
+        except Exception as exc:
+            self._last_error = f"Volume control failed: {exc}"
+            raise PlaybackError(self._last_error) from exc
         self._volume = new
         settings.set("volume", new)
 
     def set_volume(self, value: int) -> None:
-        self._require_ipc()
+        if self.ipc is None:
+            self._last_error = "mpv is not running. Play a track first."
+            raise PlaybackError(self._last_error)
         assert self.ipc is not None
-        self.ipc.set_property("volume", value)
+        try:
+            self.ipc.set_property("volume", value)
+        except Exception as exc:
+            self._last_error = f"Volume control failed: {exc}"
+            raise PlaybackError(self._last_error) from exc
         self._volume = value
         settings.set("volume", value)
 
     def set_speed(self, speed: float) -> None:
-        self._require_ipc()
+        if self.ipc is None:
+            self._last_error = "mpv is not running. Play a track first."
+            raise PlaybackError(self._last_error)
         assert self.ipc is not None
-        self.ipc.set_property("speed", speed)
+        try:
+            self.ipc.set_property("speed", speed)
+        except Exception as exc:
+            self._last_error = f"Speed control failed: {exc}"
+            raise PlaybackError(self._last_error) from exc
         self._speed = speed
         settings.set("playback_speed", speed)
 
@@ -220,20 +373,29 @@ class PlaybackService:
         self.set_speed(next_speed)
 
     def toggle_shuffle(self) -> None:
-        self._require_ipc()
-        assert self.ipc is not None
-        self.ipc.command("cycle", "shuffle")
-        self.state.shuffle = not self.state.shuffle
+        if self.ipc is None:
+            self._last_error = "mpv is not running. Play a track first."
+            raise PlaybackError(self._last_error)
+        try:
+            self.ipc.command("cycle", "shuffle")
+            self.state.shuffle = not self.state.shuffle
+        except Exception as exc:
+            self._last_error = f"Shuffle control failed: {exc}"
+            raise PlaybackError(self._last_error) from exc
 
     def toggle_repeat(self) -> None:
-        self._require_ipc()
-        assert self.ipc is not None
-        self.ipc.command("cycle", "loop")
-        # mpv loop: no -> inf -> one -> no
-        order = ["off", "all", "one"]
-        current = self.state.repeat
-        next_idx = (order.index(current) + 1) % len(order) if current in order else 0
-        self.state.repeat = order[next_idx]
+        if self.ipc is None:
+            self._last_error = "mpv is not running. Play a track first."
+            raise PlaybackError(self._last_error)
+        try:
+            self.ipc.command("cycle", "loop")
+            order = ["off", "all", "one"]
+            current = self.state.repeat
+            next_idx = (order.index(current) + 1) % len(order) if current in order else 0
+            self.state.repeat = order[next_idx]
+        except Exception as exc:
+            self._last_error = f"Repeat control failed: {exc}"
+            raise PlaybackError(self._last_error) from exc
 
     # ------------------------------------------------------------------ #
     # State
@@ -253,10 +415,6 @@ class PlaybackService:
     def get_state(self) -> PlaybackState:
         self._refresh_state()
         return self.state
-
-    def _require_ipc(self) -> None:
-        if self.ipc is None or not self.ipc._connected:
-            raise PlaybackError("mpv is not running")
 
 
 playback = PlaybackService()

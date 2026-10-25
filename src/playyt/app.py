@@ -12,6 +12,7 @@ from .integrations.ytdlp import YTDLP
 from .services.playback import playback
 from .ui.bindings import NAVIGATION_BINDINGS
 from .ui.screens.account import AccountScreen
+from .ui.screens.help import HelpScreen
 from .ui.screens.home import HomeScreen
 from .ui.screens.now_playing import NowPlayingScreen
 from .ui.screens.queue import QueueScreen
@@ -93,6 +94,17 @@ class PlayYTApp(App[None]):
         self.register_theme(PLAYYT_THEME)
         self.theme = PLAYYT_THEME.name
         self.push_screen(HomeScreen())
+        self.set_interval(1.0, self.refresh_status)
+
+    def refresh_status(self) -> None:
+        state = playback.get_state()
+        if state.video_id is None:
+            self.notify_status("No track playing   |   ? for help")
+            return
+        title = state.title or "Unknown"
+        channel = state.channel or ""
+        marker = ">" if state.playing else "||"
+        self.notify_status(f"{title}  ·  {channel}   {marker}   {state.volume}%   |   ? for help")
 
     # ------------------------------------------------------------------ #
     # Navigation actions
@@ -104,11 +116,7 @@ class PlayYTApp(App[None]):
         self.pop_screen()
 
     def action_show_help(self) -> None:
-        self.notify(
-            "Keys: Up/Down navigate, Enter select, Space play/pause, "
-            "n/p next/prev, a add to queue, +/- volume, Left/Right seek, "
-            "s shuffle, r repeat, / search, q quit, ? help"
-        )
+        self.push_screen(HelpScreen())
 
     def action_home(self) -> None:
         self.push_screen(HomeScreen())

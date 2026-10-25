@@ -61,6 +61,20 @@ def _text(screen: NowPlayingScreen, selector: str) -> str:
     return screen.query_one(selector, Static).render().plain
 
 
+def test_quit_stops_playback(monkeypatch) -> None:
+    app = app_module.PlayYTApp()
+    stopped: list[bool] = []
+    monkeypatch.setattr(playback, "stop", lambda: stopped.append(True))
+    monkeypatch.setattr(app, "exit", lambda *args, **kwargs: None)
+    app.action_quit()
+    assert stopped == [True]
+
+
+def test_hidden_suspend_binding_is_active() -> None:
+    keys = {binding.key for binding in app_module.PlayYTApp.BINDINGS}
+    assert "ctrl+z" in keys
+
+
 def test_play_video_shows_new_track_while_loading(monkeypatch) -> None:
     monkeypatch.setattr(app_module, "YTDLP", _SlowYTDLP)
     monkeypatch.setattr(playback, "load", _fake_load)

@@ -6,6 +6,7 @@ from typing import ClassVar
 
 from textual import work
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, ListView, Static
 
@@ -203,7 +204,7 @@ class PlayYTApp(App[None]):
     """
 
     BINDINGS: ClassVar[list] = [
-        (b.key, b.action, b.description) for b in NAVIGATION_BINDINGS if b.show
+        Binding(b.key, b.action, b.description, show=b.show) for b in NAVIGATION_BINDINGS
     ]
 
     def __init__(self, debug: bool = False) -> None:
@@ -259,6 +260,7 @@ class PlayYTApp(App[None]):
     # Navigation actions (bound to keys)
     # ------------------------------------------------------------------ #
     def action_quit(self) -> None:  # type: ignore[override]
+        playback.stop()
         self.exit()
 
     def action_back(self) -> None:  # type: ignore[override]

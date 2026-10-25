@@ -161,10 +161,10 @@ PlayYT detects the existing mpv instance and reattaches to it instead of startin
 
 ### Playback lifecycle operations
 
-- **Detach**: Exit the TUI (press `q`) — mpv keeps playing
-- **Attach**: Launch `playyt` again — it reconnects to the running mpv
-- **Stop playback**: Press `q` then use `playyt` with the stop operation, or kill mpv manually
-- **Quit application**: Press `q` within the TUI
+- **Quit**: Press `q` or `Ctrl+Q` — playback stops and mpv exits
+- **Suspend**: Press `Ctrl+Z` — returns to the shell while audio keeps playing; run `fg` to return
+- **SSH/tmux disconnect**: If PlayYT is still running, audio continues; reattach later
+- **Reattach**: Launching `playyt` reconnects to an existing mpv if one is still running
 
 ## tmux / screen usage
 
@@ -199,7 +199,7 @@ disconnects and terminal detaches.
 | Shift+Tab | Search: return to the query |
 | Esc | Back |
 | Ctrl+Z | Suspend to the shell |
-| q | Quit |
+| q / Ctrl+Q | Quit and stop playback |
 | ? | Help |
 
 Open the help screen at any time by pressing `?`.

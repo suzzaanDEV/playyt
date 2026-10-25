@@ -117,6 +117,7 @@ class SearchPanel(ContentPanel):
         self.search_service = SearchService()
         self.results: list = []
         self.selected_index = 0
+        self._searching = False
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="search-scroll"):
@@ -129,6 +130,7 @@ class SearchPanel(ContentPanel):
             yield Static("Results", classes="section")
             yield ListView(id="search-results-list")
             yield Static(id="search-status")
+            yield Static(id="search-spinner")
 
     def on_mount(self) -> None:
         super().on_mount()
@@ -140,21 +142,44 @@ class SearchPanel(ContentPanel):
     def set_query(self, query: str) -> None:
         self.query_one("#search-query-display", Static).update(f"Query: {query}")
 
+    def _start_spinner(self) -> None:
+        self._searching = True
+        self._spinner_frames = ["|", "/", "-", "\\"]
+        self._spinner_idx = 0
+        self._spinner_interval = self.set_interval(0.1, self._tick_spinner)
+
+    def _stop_spinner(self) -> None:
+        self._searching = False
+        if hasattr(self, "_spinner_interval"):
+            self._spinner_interval.stop()
+        self.query_one("#search-spinner", Static).update("")
+
+    def _tick_spinner(self) -> None:
+        if not self._searching:
+            return
+        frame = self._spinner_frames[self._spinner_idx % len(self._spinner_frames)]
+        self.query_one("#search-spinner", Static).update(f"  {frame}  searching...")
+        self._spinner_idx += 1
+
     def run_search(self, query: str) -> None:
         if not query.strip():
             return
         self.set_query(query)
+        self._start_spinner()
+        self.query_one("#search-results-list", ListView).clear()
+        self.query_one("#search-status", Static).update("")
         try:
             self.results = self.search_service.search(query)
         except YouTubeAPIError as exc:
+            self._stop_spinner()
             self.query_one("#search-status", Static).update(f"Search failed: {exc}")
-            self.query_one("#search-results-list", ListView).clear()
             return
         except Exception as exc:
+            self._stop_spinner()
             self.query_one("#search-status", Static).update(f"Search failed: {exc}")
-            self.query_one("#search-results-list", ListView).clear()
             return
 
+        self._stop_spinner()
         list_view = self.query_one("#search-results-list", ListView)
         list_view.clear()
         self.selected_index = 0

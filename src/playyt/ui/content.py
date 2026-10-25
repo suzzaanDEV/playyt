@@ -198,7 +198,7 @@ class SearchPanel(ContentPanel):
         for idx, video in enumerate(self.results):
             if idx > 0:
                 list_view.append(ListItem(Static("  " + "-" * 35), id=f"sep_{idx}"))
-            label = f"  {video.title}"
+            label = f"  \\[>]  {video.title}"
             if video.channel:
                 label += f"  ·  {video.channel}"
             if video.duration:

@@ -6,7 +6,7 @@ from typing import ClassVar
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Footer, Header, Static
+from textual.widgets import Footer, Header, ListView, Static
 
 from .database import HistoryRepository
 from .integrations.ytdlp import YTDLP
@@ -278,7 +278,12 @@ class PlayYTApp(App[None]):
         self.switch_panel("settings")
 
     def on_list_view_selected(self, event) -> None:
-        """Handle sidebar list item selection."""
+        """Handle list item selection (sidebar navigation and search results)."""
+        if event.list_view.id == "search-results-list":
+            panel = self.current_panel
+            if isinstance(panel, SearchPanel):
+                panel.play_selected()
+            return
         if event.list_view.id != "nav-list":
             return
         item_id = event.item.id
@@ -350,7 +355,22 @@ class PlayYTApp(App[None]):
             self.notify_status(str(exc))
 
     def action_toggle_playback(self) -> None:
+        if self._play_focused_result():
+            return
         self._run_playback(playback.play_pause)
+
+    def _play_focused_result(self) -> bool:
+        """Play the highlighted search result when a results list is focused."""
+        focused = self.focused
+        if not isinstance(focused, ListView) or focused.id != "search-results-list":
+            return False
+        panel = self.current_panel
+        if not isinstance(panel, SearchPanel):
+            return False
+        if panel.get_selected_video() is None:
+            return False
+        panel.play_selected()
+        return True
 
     def action_next_track(self) -> None:
         self._run_playback(playback.next_track)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from textual import work
 from textual.app import ComposeResult
 from textual.containers import Container, VerticalScroll
 from textual.widget import Widget
@@ -13,7 +14,6 @@ from ..services.authentication import auth
 from ..services.playback import playback
 from ..services.search import SearchService
 from ..services.youtube import youtube
-from ..utils.errors import YouTubeAPIError
 from ..utils.logging import get_logger
 
 logger = get_logger("content")
@@ -129,14 +129,15 @@ class SearchPanel(ContentPanel):
             yield Static(id="search-query-display")
             yield Static("")
             yield Static("Results", classes="section")
+            yield Static(id="search-spinner")
             with VerticalScroll(id="search-scroll"):
                 yield ListView(id="search-results-list")
             yield Static(id="search-status")
-            yield Static(id="search-spinner")
 
     def on_mount(self) -> None:
         super().on_mount()
         self.query_one("#search-results-list", ListView).can_focus = True
+        self.query_one("#search-input", Input).focus()
 
     def refresh_content(self) -> None:
         pass
@@ -158,7 +159,7 @@ class SearchPanel(ContentPanel):
         ]
         self._spinner_idx = 0
         self._spinner_interval = self.set_interval(0.08, self._tick_spinner)
-        self.query_one("#search-spinner", Static).update("  searching...  ")
+        self.query_one("#search-spinner", Static).update("  [=>   ] searching YouTube...")
 
     def _stop_spinner(self) -> None:
         self._searching = False
@@ -170,42 +171,107 @@ class SearchPanel(ContentPanel):
         if not self._searching:
             return
         frame = self._spinner_frames[self._spinner_idx % len(self._spinner_frames)]
-        self.query_one("#search-spinner", Static).update(f"  {frame} searching YouTube...  ")
+        self.query_one("#search-spinner", Static).update(f"  {frame} searching YouTube...")
         self._spinner_idx += 1
 
     def run_search(self, query: str) -> None:
         if not query.strip():
             return
         self.set_query(query)
-        self._start_spinner()
+        self.results = []
         self.query_one("#search-results-list", ListView).clear()
         self.query_one("#search-status", Static).update("")
-        try:
-            self.results = self.search_service.search(query)
-        except YouTubeAPIError as exc:
-            self._stop_spinner()
-            self.query_one("#search-status", Static).update(f"Search failed: {exc}")
-            return
-        except Exception as exc:
-            self._stop_spinner()
-            self.query_one("#search-status", Static).update(f"Search failed: {exc}")
-            return
+        self._start_spinner()
+        self._search_worker(query)
 
-        self._stop_spinner()
+    @work(exclusive=True, thread=True)
+    def _search_worker(self, query: str) -> None:
+        try:
+            results = self.search_service.search(query)
+        except Exception as exc:
+            message = str(exc)
+            try:
+                self.app.call_from_thread(self._on_search_error, message)
+            except Exception:
+                logger.debug("Could not deliver search error to UI")
+            return
+        try:
+            self.app.call_from_thread(self._on_search_results, results)
+        except Exception:
+            logger.debug("Could not deliver search results to UI")
+
+    def _on_search_results(self, results: list[Video]) -> None:
+        try:
+            self._stop_spinner()
+            self.results = results
+            list_view = self.query_one("#search-results-list", ListView)
+            list_view.clear()
+            self.selected_index = 0
+            for video in self.results:
+                label = f"  \\[>]  {video.title}"
+                if video.channel:
+                    label += f"  ·  {video.channel}"
+                if video.duration:
+                    mins, secs = divmod(int(video.duration), 60)
+                    label += f"  ({mins}:{secs:02d})"
+                list_view.append(ListItem(Static(label), id=f"vid_{video.video_id}"))
+            if results:
+                list_view.index = 0
+                self.query_one("#search-status", Static).update(
+                    f"{len(results)} results  ·  Tab to tracks  ·  "
+                    "Enter to select  ·  Space to play"
+                )
+            else:
+                self.query_one("#search-status", Static).update("No results found")
+        except Exception:
+            logger.debug("Search panel is no longer mounted")
+
+    def _on_search_error(self, message: str) -> None:
+        try:
+            self._stop_spinner()
+            self.query_one("#search-status", Static).update(f"Search failed: {message}")
+        except Exception:
+            logger.debug("Search panel is no longer mounted")
+
+    def on_key(self, event) -> None:
+        """Tab moves from the search bar to the results, and back again."""
+        input_widget = self.query_one("#search-input", Input)
         list_view = self.query_one("#search-results-list", ListView)
-        list_view.clear()
-        self.selected_index = 0
-        for idx, video in enumerate(self.results):
-            if idx > 0:
-                list_view.append(ListItem(Static("  " + "-" * 35), id=f"sep_{idx}"))
-            label = f"  \\[>]  {video.title}"
-            if video.channel:
-                label += f"  ·  {video.channel}"
-            if video.duration:
-                mins, secs = divmod(int(video.duration), 60)
-                label += f"  ({mins}:{secs:02d})"
-            list_view.append(ListItem(Static(label), id=f"vid_{video.video_id}"))
-        self.query_one("#search-status", Static).update(f"{len(self.results)} results")
+        if event.key == "tab" and self.app.focused is input_widget:
+            list_view.focus()
+            event.prevent_default()
+            event.stop()
+        elif event.key == "shift+tab" and self.app.focused is list_view:
+            input_widget.focus()
+            event.prevent_default()
+            event.stop()
+
+    def on_list_view_highlighted(self, event) -> None:
+        if getattr(event.list_view, "id", None) != "search-results-list":
+            return
+        self._clear_armed()
+
+    def _clear_armed(self) -> None:
+        try:
+            list_view = self.query_one("#search-results-list", ListView)
+        except Exception:
+            return
+        for item in list_view.children:
+            item.remove_class("armed")
+
+    def arm_selected(self) -> None:
+        """Mark the highlighted result as ready to play."""
+        video = self.get_selected_video()
+        if video is None:
+            return
+        self._clear_armed()
+        list_view = self.query_one("#search-results-list", ListView)
+        highlighted = list_view.highlighted_child
+        if highlighted is not None:
+            highlighted.add_class("armed")
+        self.query_one("#search-status", Static).update(
+            f"Selected: {video.title}  ·  press Space to play"
+        )
 
     def get_selected_video(self) -> Video | None:
         list_view = self.query_one("#search-results-list", ListView)

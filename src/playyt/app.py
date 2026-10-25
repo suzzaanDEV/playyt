@@ -70,7 +70,7 @@ class PlayYTApp(App[None]):
     #sidebar {
         width: 26;
         background: #313244;
-        border-right: solid #89b4fa;
+        border-right: solid #45475a;
         padding: 1;
     }
 
@@ -115,14 +115,28 @@ class PlayYTApp(App[None]):
         border: solid #45475a;
     }
 
+    ListView:focus {
+        border: solid #cba6f7;
+    }
+
     ListItem {
         padding: 0 1;
         color: #cdd6f4;
     }
 
     ListItem.-highlight {
-        background: #89b4fa;
-        color: #1e1e2e;
+        background: #45475a;
+        color: #f5e0dc;
+    }
+
+    ListItem.armed {
+        background: #585b70;
+        color: #f9e2af;
+        text-style: bold;
+    }
+
+    #search-results-list ListItem {
+        border-bottom: solid #313244;
     }
 
     #home-scroll,
@@ -141,6 +155,12 @@ class PlayYTApp(App[None]):
 
     #search-input {
         margin: 1 0;
+        background: #313244;
+        border: tall #45475a;
+    }
+
+    #search-input:focus {
+        border: tall #cba6f7;
     }
 
     .search-result {
@@ -159,7 +179,7 @@ class PlayYTApp(App[None]):
     }
 
     .panel-purple {
-        border: solid #89b4fa;
+        border: solid #cba6f7;
     }
 
     .panel-orange {
@@ -229,7 +249,6 @@ class PlayYTApp(App[None]):
         panel = panel_cls(app_ref=self)
         content.mount(panel)
         self.current_panel = panel
-        panel.refresh_content()
 
     def notify_status(self, message: str) -> None:
         status = self.query_one("#status", Static)
@@ -282,7 +301,7 @@ class PlayYTApp(App[None]):
         if event.list_view.id == "search-results-list":
             panel = self.current_panel
             if isinstance(panel, SearchPanel):
-                panel.play_selected()
+                panel.arm_selected()
             return
         if event.list_view.id != "nav-list":
             return

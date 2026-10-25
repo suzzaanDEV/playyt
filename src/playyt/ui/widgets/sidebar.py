@@ -31,5 +31,6 @@ class Sidebar(Widget):
             ListView(
                 *[ListItem(Label(label), id=key) for key, label in NAV_ITEMS],
                 id="nav-list",
+                initial_index=0,
             )
         )

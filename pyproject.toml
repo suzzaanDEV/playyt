@@ -44,6 +44,7 @@ quote-style = "double"
 python_version = "3.12"
 strict = false
 warn_return_any = true
+mypy_path = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

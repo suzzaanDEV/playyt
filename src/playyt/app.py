@@ -6,21 +6,45 @@ from typing import ClassVar
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Footer, Header, ListView, Static
+from textual.widgets import Footer, Header, Static
 
+from .database import HistoryRepository
 from .integrations.ytdlp import YTDLP
+from .services.authentication import auth
 from .services.playback import playback
 from .ui.bindings import NAVIGATION_BINDINGS
-from .ui.screens.account import AccountScreen
+from .ui.content import (
+    AccountPanel,
+    ContentPanel,
+    HistoryPanel,
+    HomePanel,
+    LibraryPanel,
+    LikedPanel,
+    PlaylistsPanel,
+    QueuePanel,
+    SearchPanel,
+    SettingsPanel,
+    SubscriptionsPanel,
+)
 from .ui.screens.help import HelpScreen
-from .ui.screens.home import HomeScreen
 from .ui.screens.now_playing import NowPlayingScreen
-from .ui.screens.queue import QueueScreen
-from .ui.screens.search import SearchScreen
 from .ui.styles.theme import PLAYYT_THEME
 from .ui.widgets.mini_player import MiniPlayer
 from .ui.widgets.sidebar import Sidebar
 from .utils.logging import setup_logging
+
+PANEL_CLASSES: dict[str, type[ContentPanel]] = {
+    "home": HomePanel,
+    "search": SearchPanel,
+    "queue": QueuePanel,
+    "playlists": PlaylistsPanel,
+    "liked": LikedPanel,
+    "history": HistoryPanel,
+    "subscriptions": SubscriptionsPanel,
+    "library": LibraryPanel,
+    "account": AccountPanel,
+    "settings": SettingsPanel,
+}
 
 
 class PlayYTApp(App[None]):
@@ -71,6 +95,19 @@ class PlayYTApp(App[None]):
         text-style: bold;
         color: $text-secondary;
     }
+
+    ListView {
+        background: $panel;
+    }
+
+    ListItem {
+        padding: 0 1;
+    }
+
+    ListItem.-highlight {
+        background: $primary;
+        color: $text-primary;
+    }
     """
 
     BINDINGS: ClassVar[list] = [
@@ -80,12 +117,13 @@ class PlayYTApp(App[None]):
     def __init__(self, debug: bool = False) -> None:
         super().__init__()
         setup_logging(debug=debug)
+        self.current_panel: ContentPanel | None = None
 
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal():
             yield Sidebar(id="sidebar")
-            yield Vertical(Static(id="content-home", classes="title"), id="content")
+            yield Vertical(id="content")
         yield MiniPlayer(id="mini-player")
         yield Static(id="status")
         yield Footer()
@@ -93,8 +131,10 @@ class PlayYTApp(App[None]):
     def on_mount(self) -> None:
         self.register_theme(PLAYYT_THEME)
         self.theme = PLAYYT_THEME.name
-        self.push_screen(HomeScreen())
+        self.switch_panel("home")
         self.set_interval(1.0, self.refresh_status)
+        # Focus the sidebar list so arrow keys work immediately
+        self.query_one("#nav-list").focus()
 
     def refresh_status(self) -> None:
         state = playback.get_state()
@@ -107,66 +147,118 @@ class PlayYTApp(App[None]):
         self.notify_status(f"{title}  ·  {channel}   {marker}   {state.volume}%   |   ? for help")
 
     # ------------------------------------------------------------------ #
-    # Navigation actions
+    # Panel switching
+    # ------------------------------------------------------------------ #
+    def switch_panel(self, key: str) -> None:
+        """Swap the content area to the given panel key."""
+        content = self.query_one("#content", Vertical)
+        content.remove_children()
+        panel_cls = PANEL_CLASSES.get(key, HomePanel)
+        panel = panel_cls(app_ref=self)
+        content.mount(panel)
+        self.current_panel = panel
+        panel.refresh_content()
+
+    def notify_status(self, message: str) -> None:
+        status = self.query_one("#status", Static)
+        status.update(message)
+
+    # ------------------------------------------------------------------ #
+    # Navigation actions (bound to keys)
     # ------------------------------------------------------------------ #
     def action_quit(self) -> None:  # type: ignore[override]
         self.exit()
 
     def action_back(self) -> None:  # type: ignore[override]
-        self.pop_screen()
+        self.switch_panel("home")
 
     def action_show_help(self) -> None:
         self.push_screen(HelpScreen())
 
     def action_home(self) -> None:
-        self.push_screen(HomeScreen())
+        self.switch_panel("home")
 
     def action_search(self) -> None:
-        self.push_screen(SearchScreen())
+        self.switch_panel("search")
 
     def action_queue(self) -> None:
-        self.push_screen(QueueScreen())
+        self.switch_panel("queue")
 
     def action_playlists(self) -> None:
-        self.notify("Playlists: browse your YouTube playlists (requires login).")
+        self.switch_panel("playlists")
 
     def action_liked(self) -> None:
-        self.notify("Liked: browse your liked videos (requires login).")
+        self.switch_panel("liked")
 
     def action_history(self) -> None:
-        self.notify("History: local play history.")
+        self.switch_panel("history")
 
     def action_subscriptions(self) -> None:
-        self.notify("Subscriptions: your subscribed channels (requires login).")
+        self.switch_panel("subscriptions")
 
     def action_library(self) -> None:
-        self.notify("Library: your saved content.")
+        self.switch_panel("library")
 
     def action_account(self) -> None:
-        self.push_screen(AccountScreen())
+        self.switch_panel("account")
 
     def action_settings(self) -> None:
-        self.notify("Settings: configure playback and appearance.")
+        self.switch_panel("settings")
 
-    def on_list_view_selected(self, event: ListView.Selected) -> None:
+    def on_list_view_selected(self, event) -> None:
+        """Handle sidebar list item selection."""
         if event.list_view.id != "nav-list":
             return
         item_id = event.item.id
         if item_id is None:
             return
-        screen_map = {
-            "home": lambda: self.push_screen(HomeScreen()),
-            "search": lambda: self.push_screen(SearchScreen()),
-            "queue": lambda: self.push_screen(QueueScreen()),
-            "account": lambda: self.push_screen(AccountScreen()),
-        }
-        action = screen_map.get(item_id)
-        if action:
-            action()
+        self.switch_panel(item_id)
 
-    def notify_status(self, message: str) -> None:
-        status = self.query_one("#status", Static)
-        status.update(message)
+    # ------------------------------------------------------------------ #
+    # Search actions
+    # ------------------------------------------------------------------ #
+    def action_search_input(self) -> None:
+        """Placeholder for search input handling from panels."""
+        pass
+
+    def play_video(self, video) -> None:
+        """Resolve a video via yt-dlp and start playback, showing Now Playing."""
+        ytdlp = YTDLP()
+        try:
+            resolved = ytdlp.resolve_url(video.video_id)
+        except Exception as exc:
+            self.notify(f"Failed to resolve media: {exc}")
+            return
+        playback.load(
+            resolved["url"],
+            title=resolved.get("title") or video.title,
+            channel=resolved.get("channel") or video.channel,
+        )
+        # Add to history
+        try:
+            HistoryRepository().add(
+                video.video_id,
+                resolved.get("title") or video.title,
+                resolved.get("channel") or video.channel,
+                resolved.get("duration"),
+            )
+        except Exception:
+            pass
+        self.push_screen(NowPlayingScreen(video=video))
+
+    def authenticate(self) -> None:
+        """Start OAuth device flow."""
+        try:
+            auth.authenticate()
+            self.notify("Authentication successful.")
+            self.switch_panel("account")
+        except Exception as exc:
+            self.notify(f"Authentication failed: {exc}")
+
+    def logout(self) -> None:
+        auth.logout()
+        self.notify("Logged out.")
+        self.switch_panel("account")
 
     # ------------------------------------------------------------------ #
     # Playback actions
@@ -197,21 +289,3 @@ class PlayYTApp(App[None]):
 
     def action_seek_forward(self) -> None:
         playback.seek(10)
-
-    # ------------------------------------------------------------------ #
-    # Video playback
-    # ------------------------------------------------------------------ #
-    def play_video(self, video) -> None:
-        """Resolve a video via yt-dlp and start playback, showing Now Playing."""
-        ytdlp = YTDLP()
-        try:
-            resolved = ytdlp.resolve_url(video.video_id)
-        except Exception as exc:
-            self.notify(f"Failed to resolve media: {exc}")
-            return
-        playback.load(
-            resolved["url"],
-            title=resolved.get("title") or video.title,
-            channel=resolved.get("channel") or video.channel,
-        )
-        self.push_screen(NowPlayingScreen(video=video))

@@ -7,10 +7,11 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Optional
+from typing import BinaryIO, Optional
 
+from ..config.paths import log_dir
 from ..config.settings import settings
-from ..integrations.mpv import MPVIPC, find_existing_socket
+from ..integrations.mpv import MPVIPC, default_socket_path, find_existing_socket
 from ..models.playback import PlaybackState
 from ..utils.errors import PlaybackError
 from ..utils.logging import get_logger
@@ -37,6 +38,7 @@ class PlaybackService:
     def __init__(self) -> None:
         self.ipc: Optional[MPVIPC] = None
         self._process: Optional[subprocess.Popen] = None
+        self._mpv_log: Optional[BinaryIO] = None
         self._lock = threading.RLock()
         self.state = PlaybackState()
         self._volume = int(settings.get("volume", 80))
@@ -81,85 +83,143 @@ class PlaybackService:
     def _spawn_new_mpv(self, socket_path: Optional[str]) -> None:
         # No existing player; start a new mpv instance.
         mpv_bin = find_mpv()
-        sock = str(Path("/tmp") / "mpvplayyt.sock")
+        sock = default_socket_path()
+        self._remove_stale_socket(sock)
+        cmd = self._build_mpv_command(mpv_bin, sock)
+        self._open_mpv_log()
+        logger.debug("Spawning mpv: %s", " ".join(cmd))
+        self._launch_process(cmd, mpv_bin)
+        self._wait_for_socket(sock, mpv_bin)
+        self._connect_new_socket(sock)
+        self._apply_settings()
+        pid = self._process.pid if self._process is not None else "?"
+        logger.info("Playback service ready with mpv (pid=%s)", pid)
 
-        # Build mpv command with headless-friendly audio options
-        audio_output = settings.get("audio_output", "auto")
+    def _remove_stale_socket(self, sock: str) -> None:
+        try:
+            Path(sock).unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            logger.debug("Could not remove stale socket %s: %s", sock, exc)
+
+    def _build_mpv_command(self, mpv_bin: str, sock: str) -> list[str]:
+        # Headless-friendly: this is an audio player, so never open a video
+        # window (that fails over SSH / on servers without a display).
         cmd = [
             mpv_bin,
-            "--idle",
-            "--force-window=immediate",
-            "--input-ipc-server=" + sock,
-            "--quiet",
-            "--really-quiet",
-            "--term-playing-msg=",
+            "--idle=yes",
+            "--no-video",
+            "--vo=null",
+            "--no-terminal",
             "--audio-display=no",
+            "--input-ipc-server=" + sock,
+            "--msg-level=all=warn",
         ]
+        audio_output = settings.get("audio_output", "auto")
         if audio_output != "auto":
-            cmd.extend(["--audio-output=" + audio_output])
+            cmd.append("--ao=" + str(audio_output))
+        return cmd
 
-        logger.debug("Spawning mpv: %s", " ".join(cmd))
+    def _open_mpv_log(self) -> None:
+        log_path = log_dir() / "mpv.log"
+        log_dir().mkdir(parents=True, exist_ok=True)
+        try:
+            self._mpv_log = log_path.open("ab")
+        except OSError:
+            self._mpv_log = None
 
+    def _launch_process(self, cmd: list[str], mpv_bin: str) -> None:
         try:
             self._process = subprocess.Popen(
                 cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=self._mpv_log or subprocess.DEVNULL,
+                stderr=self._mpv_log or subprocess.DEVNULL,
                 stdin=subprocess.DEVNULL,
                 start_new_session=True,
             )
         except FileNotFoundError as exc:
             self._last_error = (
-                f"mpv binary not found at '{mpv_bin}'. Install it: sudo apt install mpv"
+                f"mpv binary not found at '{mpv_bin}'. Install it with: sudo apt install mpv"
             )
-            logger.exception(self._last_error)
+            logger.error(self._last_error)
+            self._close_mpv_log()
             self.ipc = None
             raise PlaybackError(self._last_error) from exc
         except Exception as exc:
             self._last_error = f"Failed to start mpv: {exc}"
             logger.exception(self._last_error)
+            self._close_mpv_log()
             self.ipc = None
             raise PlaybackError(self._last_error) from exc
 
-        # Wait briefly for the IPC socket to appear
-        socket_ready = False
+    def _wait_for_socket(self, sock: str, mpv_bin: str) -> None:
         for _ in range(50):  # up to 5 seconds
-            time.sleep(0.1)
-            if Path(sock).exists():
-                socket_ready = True
+            if self._process is not None and self._process.poll() is not None:
                 break
+            if Path(sock).exists():
+                return
+            time.sleep(0.1)
+        self._last_error = self._mpv_failure_message(mpv_bin, sock)
+        logger.error(self._last_error)
+        self._terminate_process()
+        self._close_mpv_log()
+        self.ipc = None
+        raise PlaybackError(self._last_error)
 
-        if not socket_ready:
-            # mpv failed to start; capture stderr for diagnostics
-            stderr_output = ""
-            try:
-                _, stderr = self._process.communicate(timeout=2)
-                stderr_output = stderr.decode("utf-8", errors="replace")[:500]
-            except Exception:
-                pass
-
-            self._process = None
-            self.ipc = None
-            self._last_error = (
-                "mpv failed to start. "
-                f"Stderr: {stderr_output if stderr_output else 'no output'}. "
-                "Install mpv: sudo apt install mpv yt-dlp"
-            )
-            logger.exception(self._last_error)
-            raise PlaybackError(self._last_error)
-
-        # Connect to the new IPC socket
+    def _connect_new_socket(self, sock: str) -> None:
         self.ipc = MPVIPC(socket_path=sock)
         try:
             self.ipc.connect()
         except Exception as exc:
-            self.ipc = None
-            self._last_error = f"Cannot connect to mpv IPC: {exc}"
+            self._last_error = f"Cannot connect to mpv IPC at {sock}: {exc}. {self._mpv_log_tail()}"
             logger.exception(self._last_error)
+            self._terminate_process()
+            self._close_mpv_log()
+            self.ipc = None
             raise PlaybackError(self._last_error) from exc
 
-        self._apply_settings()
-        logger.info("Playback service ready with mpv (pid=%s)", self._process.pid)
+    def _mpv_failure_message(self, mpv_bin: str, sock: str) -> str:
+        tail = self._mpv_log_tail()
+        parts = [f"mpv failed to start from '{mpv_bin}' (socket: {sock})."]
+        if tail:
+            parts.append(tail)
+        parts.append("Try running 'mpv --no-video --vo=null --idle=yes' manually to see the error.")
+        return " ".join(parts)
+
+    def _mpv_log_tail(self, lines: int = 8) -> str:
+        log_path = log_dir() / "mpv.log"
+        try:
+            content = log_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return ""
+        tail = [line for line in content.splitlines() if line.strip()][-lines:]
+        if not tail:
+            return ""
+        return "mpv stderr: " + " | ".join(tail)
+
+    def _terminate_process(self) -> None:
+        if self._process is None:
+            return
+        try:
+            self._process.terminate()
+            self._process.wait(timeout=2)
+        except Exception:
+            try:
+                self._process.kill()
+            except Exception:
+                pass
+        self._process = None
+
+    def _close_mpv_log(self) -> None:
+        log = self._mpv_log
+        if log is None:
+            return
+        try:
+            log.close()
+        except Exception:
+            pass
+        self._mpv_log = None
 
     def _apply_settings(self) -> None:
         if self.ipc is None:
@@ -183,12 +243,8 @@ class PlaybackService:
                     pass
                 self.ipc.close()
                 self.ipc = None
-            if self._process is not None:
-                try:
-                    self._process.wait(timeout=5)
-                except Exception:
-                    self._process.kill()
-                self._process = None
+            self._terminate_process()
+            self._close_mpv_log()
             self.state = PlaybackState()
             logger.info("Playback stopped")
 
@@ -198,6 +254,7 @@ class PlaybackService:
             if self.ipc is not None:
                 self.ipc.close()
                 self.ipc = None
+            self._close_mpv_log()
             logger.info("Detached from mpv (playback continues)")
 
     def get_last_error(self) -> Optional[str]:
@@ -209,7 +266,9 @@ class PlaybackService:
     # ------------------------------------------------------------------ #
     def load(self, url: str, title: str = "", channel: str = "") -> None:
         """Load and play a media URL."""
-        if self.ipc is None:
+        if not self.is_running():
+            if self._process is not None:
+                self.stop()
             self.start_player()
         assert self.ipc is not None
         try:
@@ -415,6 +474,50 @@ class PlaybackService:
     def get_state(self) -> PlaybackState:
         self._refresh_state()
         return self.state
+
+    # ------------------------------------------------------------------ #
+    # Diagnostics
+    # ------------------------------------------------------------------ #
+    def diagnose(self) -> list[str]:
+        """Run environment checks for playback and return human-readable lines."""
+        lines: list[str] = []
+
+        mpv_bin = find_mpv()
+        mpv_resolved = shutil.which(mpv_bin)
+        lines.append(f"mpv binary      : {mpv_resolved or 'NOT FOUND (' + mpv_bin + ')'}")
+        if mpv_resolved:
+            try:
+                result = subprocess.run(
+                    [mpv_resolved, "--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    check=False,
+                )
+                version = (result.stdout.splitlines() or ["unknown"])[0]
+                lines.append(f"mpv version     : {version}")
+            except Exception as exc:
+                lines.append(f"mpv version     : FAILED ({exc})")
+
+        ytdlp_bin = str(settings.get("yt_dlp_path", "yt-dlp"))
+        ytdlp_resolved = shutil.which(ytdlp_bin)
+        lines.append(f"yt-dlp binary   : {ytdlp_resolved or 'NOT FOUND (' + ytdlp_bin + ')'}")
+
+        lines.append(f"IPC socket      : {default_socket_path()}")
+        lines.append(f"audio_output    : {settings.get('audio_output', 'auto')}")
+        lines.append(f"mpv log         : {log_dir() / 'mpv.log'}")
+
+        self.stop()
+        try:
+            self.start_player(force_new=True)
+            pid = self._process.pid if self._process is not None else "?"
+            lines.append(f"mpv launch      : OK (pid {pid})")
+            self.stop()
+            lines.append("playback        : OK")
+        except PlaybackError as exc:
+            lines.append("mpv launch      : FAILED")
+            lines.append(f"  {exc}")
+        return lines
 
 
 playback = PlaybackService()

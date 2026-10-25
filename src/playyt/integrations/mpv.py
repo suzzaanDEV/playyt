@@ -102,10 +102,18 @@ class MPVIPC:
         return self._send({"set_property": name, "value": value})
 
 
+def default_socket_path() -> str:
+    """Return the IPC socket path used for PlayYT's mpv instance."""
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if runtime and Path(runtime).is_dir():
+        return str(Path(runtime) / "mpvplayyt.sock")
+    return "/tmp/mpvplayyt.sock"
+
+
 def find_existing_socket() -> str | None:
     """Look for an existing PlayYT mpv IPC socket."""
     candidates = [
-        os.environ.get("XDG_RUNTIME_DIR", "/tmp") + "/mpvplayyt.sock",
+        default_socket_path(),
         "/tmp/mpvplayyt.sock",
     ]
     for path in candidates:
